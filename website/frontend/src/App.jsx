@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import BatchScreen from './BatchScreen.jsx';
+import ChatScreen from './ChatScreen.jsx';
 import QualityNote from './QualityNote.jsx';
 import FeedbackPrompt from './FeedbackPrompt.jsx';
 
@@ -187,9 +188,11 @@ export default function App() {
         <nav className="modes" aria-label="Mode">
           <button className={mode === 'single' ? 'active' : ''} onClick={() => setMode('single')}>SINGLE NOTE</button>
           <button className={mode === 'batch' ? 'active' : ''} onClick={() => setMode('batch')}>BATCH</button>
+          <button className={mode === 'help' ? 'active' : ''} onClick={() => setMode('help')}>HELP</button>
         </nav>
         <section className="display">
           {mode === 'batch' && <BatchScreen />}
+          {mode === 'help' && <ChatScreen />}
           {mode === 'single' && phase === 'idle' && <IdleScreen onFile={scan} />}
           {mode === 'single' && phase === 'scanning' && <ScanScreen preview={preview} step={step} />}
           {mode === 'single' && phase === 'result' && <ResultScreen result={result} preview={preview} onReset={reset} />}
