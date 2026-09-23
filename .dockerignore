@@ -1,0 +1,8 @@
+.git
+.claude
+**/node_modules
+**/dist
+**/__pycache__
+**/*.log
+data
+website/frontend/dev.log
