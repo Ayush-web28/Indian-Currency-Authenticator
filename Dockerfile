@@ -24,6 +24,7 @@ RUN for f in model/best_model.pth model/best_real_fake_model.pth; do \
 ENV MODEL_DIR=/app/model \
     FRONTEND_DIR=/app/frontend-dist \
     OMP_NUM_THREADS=1 \
+    MALLOC_ARENA_MAX=2 \
     PYTHONUNBUFFERED=1
 
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
