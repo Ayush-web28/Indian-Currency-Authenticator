@@ -7,7 +7,11 @@ from google.genai import types
 
 log = logging.getLogger("chat")
 
-MODEL = os.environ.get("CHAT_MODEL", "gemini-3.8-flash")
+PROVIDER = os.environ.get("CHAT_PROVIDER", "gemini").lower()
+DEFAULT_MODELS = {"gemini": "gemini-3.8-flash"}
+MODEL = os.environ.get("CHAT_MODEL") or DEFAULT_MODELS.get(PROVIDER)
+KEY_VARS = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY"}
+REFUSAL_TEXT = "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
 MAX_TOKENS = 2000
 MAX_HISTORY = 10
 MAX_MESSAGE_CHARS = 1000
@@ -52,16 +56,22 @@ _client = None
 
 
 def enabled() -> bool:
-    return bool(os.environ.get("GEMINI_API_KEY"))
+    key_var = KEY_VARS.get(PROVIDER)
+    return bool(key_var and os.environ.get(key_var) and MODEL)
 
 
-def _get_client() -> genai.Client:
+def _get_client():
     global _client
     if _client is None:
-        _client = genai.Client(
-            api_key=os.environ["GEMINI_API_KEY"],
-            http_options=types.HttpOptions(timeout=30000),
-        )
+        if PROVIDER == "openai":
+            from openai import OpenAI
+
+            _client = OpenAI(timeout=30.0, max_retries=1)
+        else:
+            _client = genai.Client(
+                api_key=os.environ["GEMINI_API_KEY"],
+                http_options=types.HttpOptions(timeout=30000),
+            )
     return _client
 
 
@@ -92,14 +102,18 @@ def ask(messages: list[dict], scan: dict | None = None) -> str:
     if not history:
         raise ValueError("conversation must contain a user message")
 
+    system = SYSTEM_PROMPT + (describe_scan(scan) if scan else "")
+    if PROVIDER == "openai":
+        return _ask_openai(system, history)
+    return _ask_gemini(system, history)
+
+
+def _ask_gemini(system: str, history: list[dict]) -> str:
     contents = [
         types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part(text=m["content"])])
         for m in history
     ]
-    config = types.GenerateContentConfig(
-        system_instruction=SYSTEM_PROMPT + (describe_scan(scan) if scan else ""),
-        max_output_tokens=MAX_TOKENS,
-    )
+    config = types.GenerateContentConfig(system_instruction=system, max_output_tokens=MAX_TOKENS)
 
     try:
         response = _get_client().models.generate_content(model=MODEL, contents=contents, config=config)
@@ -121,5 +135,34 @@ def ask(messages: list[dict], scan: dict | None = None) -> str:
         for c in response.candidates or []
     )
     if blocked:
-        return "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
+        return REFUSAL_TEXT
     raise ChatUnavailable
+
+
+def _ask_openai(system: str, history: list[dict]) -> str:
+    import openai
+
+    try:
+        response = _get_client().chat.completions.create(
+            model=MODEL,
+            messages=[{"role": "system", "content": system}, *history],
+            max_completion_tokens=MAX_TOKENS,
+        )
+    except openai.RateLimitError:
+        raise ChatRateLimited
+    except (openai.AuthenticationError, openai.PermissionDeniedError, openai.NotFoundError, openai.BadRequestError) as e:
+        log.error("Chat misconfigured (%s): %s", type(e).__name__, e)
+        raise ChatDisabled
+    except Exception as e:
+        log.error("Chat upstream error (%s): %s", type(e).__name__, e)
+        raise ChatUnavailable
+
+    if not response.choices:
+        raise ChatUnavailable
+    choice = response.choices[0]
+    if choice.finish_reason == "content_filter" or getattr(choice.message, "refusal", None):
+        return REFUSAL_TEXT
+    text = (choice.message.content or "").strip()
+    if not text:
+        raise ChatUnavailable
+    return text
