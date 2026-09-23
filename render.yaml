@@ -8,3 +8,7 @@ services:
     envVars:
       - key: ADMIN_TOKEN
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CHAT_MODEL
+        value: claude-opus-5
