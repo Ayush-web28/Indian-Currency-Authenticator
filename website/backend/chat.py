@@ -1,12 +1,14 @@
 import logging
 import os
 
-import anthropic
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types
 
 log = logging.getLogger("chat")
 
-MODEL = os.environ.get("CHAT_MODEL", "claude-opus-5")
-MAX_TOKENS = 1500
+MODEL = os.environ.get("CHAT_MODEL", "gemini-3.8-flash")
+MAX_TOKENS = 2000
 MAX_HISTORY = 10
 MAX_MESSAGE_CHARS = 1000
 
@@ -50,13 +52,16 @@ _client = None
 
 
 def enabled() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return bool(os.environ.get("GEMINI_API_KEY"))
 
 
-def _get_client() -> anthropic.Anthropic:
+def _get_client() -> genai.Client:
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(timeout=30.0, max_retries=1)
+        _client = genai.Client(
+            api_key=os.environ["GEMINI_API_KEY"],
+            http_options=types.HttpOptions(timeout=30000),
+        )
     return _client
 
 
@@ -87,31 +92,34 @@ def ask(messages: list[dict], scan: dict | None = None) -> str:
     if not history:
         raise ValueError("conversation must contain a user message")
 
-    kwargs = {}
-    if not MODEL.startswith("claude-haiku"):
-        kwargs["output_config"] = {"effort": "low"}
+    contents = [
+        types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part(text=m["content"])])
+        for m in history
+    ]
+    config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT + (describe_scan(scan) if scan else ""),
+        max_output_tokens=MAX_TOKENS,
+    )
 
     try:
-        response = _get_client().messages.create(
-            model=MODEL,
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM_PROMPT + (describe_scan(scan) if scan else ""),
-            messages=history,
-            **kwargs,
-        )
-    except anthropic.RateLimitError:
-        raise ChatRateLimited
-    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError, anthropic.NotFoundError) as e:
-        log.error("Chat misconfigured (%s): %s", type(e).__name__, e)
+        response = _get_client().models.generate_content(model=MODEL, contents=contents, config=config)
+    except genai_errors.ClientError as e:
+        if e.code == 429:
+            raise ChatRateLimited
+        log.error("Chat misconfigured (%s): %s", e.code, e)
         raise ChatDisabled
-    except (anthropic.APIConnectionError, anthropic.APIStatusError) as e:
+    except Exception as e:
         log.error("Chat upstream error (%s): %s", type(e).__name__, e)
         raise ChatUnavailable
 
-    if response.stop_reason == "refusal":
-        return "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
+    text = (response.text or "").strip()
+    if text:
+        return text
 
-    text = "".join(block.text for block in response.content if block.type == "text").strip()
-    if not text:
-        raise ChatUnavailable
-    return text
+    blocked = bool(response.prompt_feedback and response.prompt_feedback.block_reason) or any(
+        c.finish_reason in (types.FinishReason.SAFETY, types.FinishReason.BLOCKLIST, types.FinishReason.PROHIBITED_CONTENT)
+        for c in response.candidates or []
+    )
+    if blocked:
+        return "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
+    raise ChatUnavailable
