@@ -235,6 +235,64 @@ body {
 .stars .on { color: var(--warn); }
 .stars .off { color: #23402f; }
 
+/* Modes */
+.modes { display: flex; gap: 8px; padding: 0 0 12px; }
+
+.modes button {
+  flex: 1;
+  font: inherit;
+  font-size: 22px;
+  letter-spacing: 2px;
+  padding: 6px 0;
+  color: #aab3bd;
+  background: #1d2228;
+  border: 2px solid #0a0d10;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.modes button.active { color: var(--screen); background: var(--ink); text-shadow: none; }
+.modes button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Batch */
+.batch { display: flex; flex-direction: column; gap: 16px; min-height: 410px; border: 2px dashed transparent; border-radius: 8px; }
+.batch.drag { border-color: var(--ink); background: rgba(109, 255, 176, 0.06); }
+.batch-busy { justify-content: center; }
+.batch-title { font-size: 34px; font-weight: normal; text-align: center; letter-spacing: 2px; }
+.batch-error { color: var(--fake); text-align: center; }
+
+.batch-files, .batch-rows {
+  list-style: none;
+  max-height: 230px;
+  overflow-y: auto;
+  border-top: 2px dashed var(--ink-dim);
+  border-bottom: 2px dashed var(--ink-dim);
+  padding: 6px 0;
+}
+
+.batch-files li, .batch-rows li { display: flex; gap: 12px; align-items: center; padding: 2px 4px; }
+.batch .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batch-rows .tag { min-width: 90px; }
+.batch-rows .detail { color: var(--ink-dim); text-align: right; min-width: 90px; }
+.batch-rows li.real .tag { color: var(--real); }
+.batch-rows li.fake .tag { color: var(--fake); }
+.batch-rows li.neutral .tag { color: var(--warn); }
+
+.batch-summary { display: flex; justify-content: space-around; font-size: 30px; }
+.batch-summary .real { color: var(--real); }
+.batch-summary .fake { color: var(--fake); }
+.batch-summary .neutral { color: var(--warn); }
+
+.remove {
+  font: inherit;
+  color: var(--fake);
+  background: transparent;
+  border: 1px solid var(--fake);
+  border-radius: 4px;
+  width: 28px;
+  cursor: pointer;
+}
+
 /* Tray */
 .tray {
   display: flex;
@@ -260,6 +318,10 @@ body {
   .prompt { font-size: 28px; }
   .result h2 { font-size: 30px; }
   .key { font-size: 21px; }
+  .batch-summary { flex-wrap: wrap; gap: 4px 16px; font-size: 26px; }
+  .batch-rows li { gap: 8px; }
+  .batch-rows .tag { min-width: 58px; }
+  .batch-rows .detail { min-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

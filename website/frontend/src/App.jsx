@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import BatchScreen from './BatchScreen.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -128,6 +129,7 @@ function ResultScreen({ result, preview, onReset }) {
 }
 
 export default function App() {
+  const [mode, setMode] = useState('single');
   const [phase, setPhase] = useState('idle');
   const [preview, setPreview] = useState(null);
   const [result, setResult] = useState(null);
@@ -175,11 +177,16 @@ export default function App() {
           <span className="brand">INDIAN CURRENCY AUTHENTICATOR</span>
           <span className="led" />
         </header>
+        <nav className="modes" aria-label="Mode">
+          <button className={mode === 'single' ? 'active' : ''} onClick={() => setMode('single')}>SINGLE NOTE</button>
+          <button className={mode === 'batch' ? 'active' : ''} onClick={() => setMode('batch')}>BATCH</button>
+        </nav>
         <section className="display">
-          {phase === 'idle' && <IdleScreen onFile={scan} />}
-          {phase === 'scanning' && <ScanScreen preview={preview} step={step} />}
-          {phase === 'result' && <ResultScreen result={result} preview={preview} onReset={reset} />}
-          {phase === 'error' && (
+          {mode === 'batch' && <BatchScreen />}
+          {mode === 'single' && phase === 'idle' && <IdleScreen onFile={scan} />}
+          {mode === 'single' && phase === 'scanning' && <ScanScreen preview={preview} step={step} />}
+          {mode === 'single' && phase === 'result' && <ResultScreen result={result} preview={preview} onReset={reset} />}
+          {mode === 'single' && phase === 'error' && (
             <div className="result fake">
               <h2>SERVICE UNAVAILABLE</h2>
               <p className="sub">{error}</p>
