@@ -23,8 +23,9 @@ app.add_middleware(
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-MODEL_DIR = Path(os.getenv("MODEL_DIR", Path(__file__).resolve().parents[2] / "model"))
-FRONTEND_DIR = Path(os.getenv("FRONTEND_DIR", Path(__file__).resolve().parents[1] / "frontend" / "dist"))
+HERE = Path(__file__).resolve().parent
+MODEL_DIR = Path(os.environ["MODEL_DIR"]) if "MODEL_DIR" in os.environ else HERE.parent.parent / "model"
+FRONTEND_DIR = Path(os.environ["FRONTEND_DIR"]) if "FRONTEND_DIR" in os.environ else HERE.parent / "frontend" / "dist"
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
