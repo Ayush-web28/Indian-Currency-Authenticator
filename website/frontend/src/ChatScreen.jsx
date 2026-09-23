@@ -9,7 +9,9 @@ const SUGGESTIONS = [
   'I think I received a fake note. What should I do?',
 ];
 
-export default function ChatScreen() {
+const VERDICT_LABEL = { REAL: 'GENUINE', FAKE: 'COUNTERFEIT SUSPECTED', NOT_NOTE: 'NOT A NOTE' };
+
+export default function ChatScreen({ scan }) {
   const [enabled, setEnabled] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
@@ -35,7 +37,7 @@ export default function ChatScreen() {
       const res = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, ...(scan ? { scan } : {}) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Something went wrong.');
@@ -68,6 +70,8 @@ export default function ChatScreen() {
     );
   }
 
+  const suggestions = scan ? ['Explain my scan result', ...SUGGESTIONS.slice(0, 2)] : SUGGESTIONS;
+
   return (
     <div className="chat">
       <div className="chat-log" role="log" aria-live="polite">
@@ -75,8 +79,13 @@ export default function ChatScreen() {
           <div className="chat-empty">
             <p className="prompt">HELP DESK</p>
             <p className="hint">Ask about banknote security features or your scan result.</p>
+            {scan && (
+              <p className="hint">
+                LAST SCAN: {VERDICT_LABEL[scan.verdict]} ({scan.confidence}%)
+              </p>
+            )}
             <div className="softkeys">
-              {SUGGESTIONS.map((s) => (
+              {suggestions.map((s) => (
                 <button key={s} className="key small" onClick={() => send(s)}>
                   &gt; {s}
                 </button>
