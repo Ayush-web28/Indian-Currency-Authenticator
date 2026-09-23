@@ -5,12 +5,13 @@ const MAX_FILES = 20;
 
 function verdict(row) {
   if (row.error) return { label: 'ERROR', cls: 'neutral', detail: row.error };
-  if (!row.stage2) return { label: 'NOT NOTE', cls: 'neutral', detail: `${row.stage1.confidence}%` };
+  const retake = row.quality?.retake ? ' · RETAKE' : '';
+  if (!row.stage2) return { label: 'NOT NOTE', cls: 'neutral', detail: `${row.stage1.confidence}%${retake}` };
   const isReal = row.stage2.classification === 'REAL';
   return {
     label: isReal ? 'REAL' : 'FAKE',
     cls: isReal ? 'real' : 'fake',
-    detail: `${row.stage2.confidence}% · ${row.stage2.grade}`,
+    detail: `${row.stage2.confidence}% · ${row.stage2.grade}${retake}`,
   };
 }
 
