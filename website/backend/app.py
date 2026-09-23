@@ -1,20 +1,25 @@
+import csv
 import gc
 import io
 import os
+import secrets
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.models as models
 import torchvision.transforms as transforms
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
+from pydantic import BaseModel, Field
 
+import feedback
 from quality import assess_quality
 
 app = FastAPI(title="Fake Currency Detection API")
@@ -155,6 +160,46 @@ async def batch(files: list[UploadFile] = File(...)):
         results.append({"filename": f.filename, **analysis})
 
     return {"summary": summary, "results": results}
+
+
+class FeedbackIn(BaseModel):
+    predicted: Literal["REAL", "FAKE", "NOT_NOTE"]
+    actual: Literal["REAL", "FAKE", "NOT_NOTE"]
+    confidence: float | None = Field(default=None, ge=0, le=100)
+    quality: Literal["GOOD", "FAIR", "POOR"] | None = None
+    comment: str = Field(default="", max_length=300)
+
+
+@app.post("/api/feedback")
+def submit_feedback(body: FeedbackIn):
+    try:
+        feedback_id = feedback.add_feedback(**body.model_dump())
+    except feedback.FeedbackFull:
+        raise HTTPException(status_code=503, detail="Feedback storage is full")
+    return {"id": feedback_id}
+
+
+@app.get("/api/feedback/export")
+def export_feedback(format: Literal["json", "csv"] = "json", x_admin_token: str | None = Header(default=None)):
+    expected = os.environ.get("ADMIN_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not x_admin_token or not secrets.compare_digest(x_admin_token, expected):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+
+    rows = feedback.list_feedback()
+    if format == "json":
+        return {"summary": feedback.summary(), "rows": rows}
+
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["id", "created_at", "predicted", "actual", "confidence", "quality", "comment"])
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(
+        out.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=feedback.csv"},
+    )
 
 
 @app.get("/health")
