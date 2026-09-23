@@ -10,6 +10,7 @@ import torch.nn as nn
 import torchvision.models as models
 import torchvision.transforms as transforms
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -120,6 +121,36 @@ async def detect(file: UploadFile = File(...)):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid image file")
     return analyze(image)
+
+
+MAX_BATCH = 20
+
+
+@app.post("/api/batch")
+async def batch(files: list[UploadFile] = File(...)):
+    if len(files) > MAX_BATCH:
+        raise HTTPException(status_code=400, detail=f"Maximum {MAX_BATCH} images per batch")
+
+    results = []
+    summary = {"total": len(files), "real": 0, "fake": 0, "not_currency": 0, "errors": 0}
+    for f in files:
+        try:
+            image = Image.open(io.BytesIO(await f.read())).convert("RGB")
+        except Exception:
+            summary["errors"] += 1
+            results.append({"filename": f.filename, "error": "Invalid image file"})
+            continue
+
+        analysis = await run_in_threadpool(analyze, image)
+        if analysis["stage2"] is None:
+            summary["not_currency"] += 1
+        elif analysis["stage2"]["classification"] == "REAL":
+            summary["real"] += 1
+        else:
+            summary["fake"] += 1
+        results.append({"filename": f.filename, **analysis})
+
+    return {"summary": summary, "results": results}
 
 
 @app.get("/health")
