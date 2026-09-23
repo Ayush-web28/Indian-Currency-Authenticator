@@ -213,8 +213,18 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=chat.MAX_MESSAGE_CHARS)
 
 
+class ScanContext(BaseModel):
+    verdict: Literal["REAL", "FAKE", "NOT_NOTE"]
+    confidence: float = Field(ge=0, le=100)
+    grade: Literal["A", "B", "C", "D"] | None = None
+    risk: Literal["LOW", "MEDIUM", "HIGH"] | None = None
+    decision_strength: Literal["BORDERLINE", "MODERATE", "STRONG"] | None = None
+    quality: Literal["GOOD", "FAIR", "POOR"] | None = None
+
+
 class ChatIn(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=50)
+    scan: ScanContext | None = None
 
 
 def visitor_key(request: Request) -> str:
@@ -239,7 +249,10 @@ def chat_endpoint(body: ChatIn, request: Request):
         raise HTTPException(status_code=429, detail="Too many messages. Please wait a minute.", headers={"Retry-After": "60"})
 
     try:
-        reply = chat.ask([m.model_dump() for m in body.messages])
+        reply = chat.ask(
+            [m.model_dump() for m in body.messages],
+            body.scan.model_dump() if body.scan else None,
+        )
     except chat.ChatRateLimited:
         raise HTTPException(status_code=429, detail="The assistant is busy. Please try again shortly.", headers={"Retry-After": "30"})
     except chat.ChatDisabled:
