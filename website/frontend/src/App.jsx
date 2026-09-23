@@ -83,7 +83,21 @@ function ScanScreen({ preview, step }) {
   );
 }
 
-function ResultScreen({ result, preview, onReset }) {
+function toScan(result) {
+  if (!result) return null;
+  const { stage1, stage2, quality } = result;
+  if (!stage2) return { verdict: 'NOT_NOTE', confidence: stage1.confidence, quality: quality?.rating };
+  return {
+    verdict: stage2.classification,
+    confidence: stage2.confidence,
+    grade: stage2.grade,
+    risk: stage2.risk,
+    decision_strength: stage2.decision_strength,
+    quality: quality?.rating,
+  };
+}
+
+function ResultScreen({ result, preview, onReset, onAsk }) {
   const { stage1, stage2 } = result;
 
   if (!stage2) {
@@ -97,6 +111,7 @@ function ResultScreen({ result, preview, onReset }) {
         <FeedbackPrompt predicted="NOT_NOTE" confidence={stage1.confidence} quality={result.quality?.rating} />
         <div className="softkeys">
           <button className="key" onClick={onReset}>&gt; TRY ANOTHER NOTE</button>
+          <button className="key" onClick={onAsk}>&gt; ASK ABOUT THIS</button>
         </div>
       </div>
     );
@@ -131,6 +146,7 @@ function ResultScreen({ result, preview, onReset }) {
 
       <div className="softkeys">
         <button className="key" onClick={onReset}>&gt; CHECK ANOTHER NOTE</button>
+        <button className="key" onClick={onAsk}>&gt; ASK ABOUT THIS RESULT</button>
       </div>
     </div>
   );
@@ -192,10 +208,10 @@ export default function App() {
         </nav>
         <section className="display">
           {mode === 'batch' && <BatchScreen />}
-          {mode === 'help' && <ChatScreen />}
+          {mode === 'help' && <ChatScreen scan={toScan(result)} />}
           {mode === 'single' && phase === 'idle' && <IdleScreen onFile={scan} />}
           {mode === 'single' && phase === 'scanning' && <ScanScreen preview={preview} step={step} />}
-          {mode === 'single' && phase === 'result' && <ResultScreen result={result} preview={preview} onReset={reset} />}
+          {mode === 'single' && phase === 'result' && <ResultScreen result={result} preview={preview} onReset={reset} onAsk={() => setMode('help')} />}
           {mode === 'single' && phase === 'error' && (
             <div className="result fake">
               <h2>SERVICE UNAVAILABLE</h2>
