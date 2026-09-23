@@ -12,15 +12,17 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import torchvision.transforms as transforms
-from fastapi import FastAPI, File, Header, HTTPException, Response, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field
 
+import chat
 import feedback
 from quality import assess_quality
+from ratelimit import SlidingWindow
 
 app = FastAPI(title="Fake Currency Detection API")
 app.add_middleware(
@@ -200,6 +202,51 @@ def export_feedback(format: Literal["json", "csv"] = "json", x_admin_token: str 
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=feedback.csv"},
     )
+
+
+chat_per_visitor = SlidingWindow(int(os.environ.get("CHAT_PER_MINUTE", "6")), 60)
+chat_site_wide = SlidingWindow(int(os.environ.get("CHAT_PER_HOUR", "300")), 3600)
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=chat.MAX_MESSAGE_CHARS)
+
+
+class ChatIn(BaseModel):
+    messages: list[ChatMessage] = Field(min_length=1, max_length=50)
+
+
+def visitor_key(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[-1].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@app.get("/api/chat/status")
+def chat_status():
+    return {"enabled": chat.enabled()}
+
+
+@app.post("/api/chat")
+def chat_endpoint(body: ChatIn, request: Request):
+    if body.messages[-1].role != "user":
+        raise HTTPException(status_code=422, detail="Last message must be from the user")
+    if not chat.enabled():
+        raise HTTPException(status_code=503, detail="Chat is not available right now")
+    if not chat_per_visitor.allow(visitor_key(request)) or not chat_site_wide.allow("site"):
+        raise HTTPException(status_code=429, detail="Too many messages. Please wait a minute.", headers={"Retry-After": "60"})
+
+    try:
+        reply = chat.ask([m.model_dump() for m in body.messages])
+    except chat.ChatRateLimited:
+        raise HTTPException(status_code=429, detail="The assistant is busy. Please try again shortly.", headers={"Retry-After": "30"})
+    except chat.ChatDisabled:
+        raise HTTPException(status_code=503, detail="Chat is not available right now")
+    except chat.ChatUnavailable:
+        raise HTTPException(status_code=502, detail="The assistant could not answer. Please try again.")
+    return {"reply": reply}
 
 
 @app.get("/health")

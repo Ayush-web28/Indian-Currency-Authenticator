@@ -64,6 +64,12 @@ def ask(messages: list[dict]) -> str:
     if not enabled():
         raise ChatDisabled
 
+    history = list(messages[-MAX_HISTORY:])
+    while history and history[0]["role"] != "user":
+        history.pop(0)
+    if not history:
+        raise ValueError("conversation must contain a user message")
+
     kwargs = {}
     if not MODEL.startswith("claude-haiku"):
         kwargs["output_config"] = {"effort": "low"}
@@ -73,7 +79,7 @@ def ask(messages: list[dict]) -> str:
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=SYSTEM_PROMPT,
-            messages=messages[-MAX_HISTORY:],
+            messages=history,
             **kwargs,
         )
     except anthropic.RateLimitError:
