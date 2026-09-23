@@ -5,7 +5,7 @@ ANALYSIS_SIZE = 512
 
 # (warn_below, fail_below) for "higher is better"; (warn_above, fail_above) for glare.
 SHARPNESS = (150.0, 60.0)
-CONTRAST = (40.0, 20.0)
+CONTRAST = (28.0, 14.0)
 RESOLUTION = (400, 200)
 DARK = (70.0, 40.0)
 BRIGHT = (200.0, 225.0)
