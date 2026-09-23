@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 import chat
 import feedback
+from imaging import MAX_UPLOAD_BYTES, ImageRejected, load_image
 from quality import assess_quality
 from ratelimit import SlidingWindow
 
@@ -94,8 +95,8 @@ def strength(p: float) -> str:
     return "BORDERLINE" if distance < 10 else "MODERATE" if distance <= 30 else "STRONG"
 
 
-def analyze(image: Image.Image) -> dict:
-    quality = assess_quality(image)
+def analyze(image: Image.Image, original_size: tuple[int, int] | None = None) -> dict:
+    quality = assess_quality(image, original_size)
     p1 = predict(stage1_model, image)
     is_currency = p1 > 0.5
     stage1 = {
@@ -128,10 +129,10 @@ def analyze(image: Image.Image) -> dict:
 @app.post("/api/detect")
 async def detect(file: UploadFile = File(...)):
     try:
-        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid image file")
-    return analyze(image)
+        image, original_size = load_image(await file.read(MAX_UPLOAD_BYTES + 1))
+    except ImageRejected as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return analyze(image, original_size)
 
 
 MAX_BATCH = 20
@@ -146,13 +147,13 @@ async def batch(files: list[UploadFile] = File(...)):
     summary = {"total": len(files), "real": 0, "fake": 0, "not_currency": 0, "errors": 0}
     for f in files:
         try:
-            image = Image.open(io.BytesIO(await f.read())).convert("RGB")
-        except Exception:
+            image, original_size = load_image(await f.read(MAX_UPLOAD_BYTES + 1))
+        except ImageRejected as e:
             summary["errors"] += 1
-            results.append({"filename": f.filename, "error": "Invalid image file"})
+            results.append({"filename": f.filename, "error": str(e)})
             continue
 
-        analysis = await run_in_threadpool(analyze, image)
+        analysis = await run_in_threadpool(analyze, image, original_size)
         if analysis["stage2"] is None:
             summary["not_currency"] += 1
         elif analysis["stage2"]["classification"] == "REAL":
