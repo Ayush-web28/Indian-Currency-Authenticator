@@ -8,7 +8,9 @@ services:
     envVars:
       - key: ADMIN_TOKEN
         sync: false
-      - key: ANTHROPIC_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
+      - key: CHAT_PROVIDER
+        value: gemini
       - key: CHAT_MODEL
-        value: claude-opus-5
+        value: gemini-3.8-flash
