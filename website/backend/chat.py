@@ -9,6 +9,7 @@ log = logging.getLogger("chat")
 
 PROVIDER = os.environ.get("CHAT_PROVIDER", "gemini").lower()
 DEFAULT_MODELS = {"gemini": "gemini-3.8-flash"}
+DEFAULT_FALLBACKS = {"gemini": "gemini-3.5-flash-lite"}
 MODEL = os.environ.get("CHAT_MODEL") or DEFAULT_MODELS.get(PROVIDER)
 KEY_VARS = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY"}
 REFUSAL_TEXT = "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
@@ -108,6 +109,11 @@ def ask(messages: list[dict], scan: dict | None = None) -> str:
     return _ask_gemini(system, history)
 
 
+def _gemini_models() -> list[str]:
+    fallback = os.environ.get("CHAT_FALLBACK_MODEL", DEFAULT_FALLBACKS["gemini"])
+    return [MODEL] + ([fallback] if fallback and fallback != MODEL else [])
+
+
 def _ask_gemini(system: str, history: list[dict]) -> str:
     contents = [
         types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part(text=m["content"])])
@@ -115,28 +121,41 @@ def _ask_gemini(system: str, history: list[dict]) -> str:
     ]
     config = types.GenerateContentConfig(system_instruction=system, max_output_tokens=MAX_TOKENS)
 
-    try:
-        response = _get_client().models.generate_content(model=MODEL, contents=contents, config=config)
-    except genai_errors.ClientError as e:
-        if e.code == 429:
-            raise ChatRateLimited
-        log.error("Chat misconfigured (%s): %s", e.code, e)
-        raise ChatDisabled
-    except Exception as e:
-        log.error("Chat upstream error (%s): %s", type(e).__name__, e)
-        raise ChatUnavailable
+    failure = ChatUnavailable
+    for model in _gemini_models():
+        try:
+            response = _get_client().models.generate_content(model=model, contents=contents, config=config)
+        except genai_errors.ClientError as e:
+            if e.code == 429:
+                log.warning("Chat rate limited on %s: %s", model, e)
+                failure = ChatRateLimited
+                continue
+            if e.code == 404:
+                log.error("Chat model not found: %s", model)
+                failure = ChatDisabled
+                continue
+            log.error("Chat misconfigured on %s (%s): %s", model, e.code, e)
+            raise ChatDisabled
+        except Exception as e:
+            log.warning("Chat upstream error on %s (%s): %s", model, type(e).__name__, e)
+            failure = ChatUnavailable
+            continue
 
-    text = (response.text or "").strip()
-    if text:
-        return text
+        text = (response.text or "").strip()
+        if text:
+            return text
 
-    blocked = bool(response.prompt_feedback and response.prompt_feedback.block_reason) or any(
-        c.finish_reason in (types.FinishReason.SAFETY, types.FinishReason.BLOCKLIST, types.FinishReason.PROHIBITED_CONTENT)
-        for c in response.candidates or []
-    )
-    if blocked:
-        return REFUSAL_TEXT
-    raise ChatUnavailable
+        finish = [c.finish_reason for c in response.candidates or []]
+        blocked = bool(response.prompt_feedback and response.prompt_feedback.block_reason) or any(
+            f in (types.FinishReason.SAFETY, types.FinishReason.BLOCKLIST, types.FinishReason.PROHIBITED_CONTENT)
+            for f in finish
+        )
+        if blocked:
+            return REFUSAL_TEXT
+        log.warning("Chat empty response from %s (finish reasons: %s)", model, finish)
+        failure = ChatUnavailable
+
+    raise failure
 
 
 def _ask_openai(system: str, history: list[dict]) -> str:
