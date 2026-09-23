@@ -15,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
+from quality import assess_quality
+
 app = FastAPI(title="Fake Currency Detection API")
 app.add_middleware(
     CORSMiddleware,
@@ -86,6 +88,7 @@ def strength(p: float) -> str:
 
 
 def analyze(image: Image.Image) -> dict:
+    quality = assess_quality(image)
     p1 = predict(stage1_model, image)
     is_currency = p1 > 0.5
     stage1 = {
@@ -93,13 +96,14 @@ def analyze(image: Image.Image) -> dict:
         "confidence": round((p1 if is_currency else 1 - p1) * 100, 2),
     }
     if not is_currency:
-        return {"timestamp": datetime.now().isoformat(), "stage1": stage1, "stage2": None}
+        return {"timestamp": datetime.now().isoformat(), "quality": quality, "stage1": stage1, "stage2": None}
 
     p2 = predict(stage2_model, image)
     is_real = p2 > 0.5
     conf = p2 if is_real else 1 - p2
     return {
         "timestamp": datetime.now().isoformat(),
+        "quality": quality,
         "stage1": stage1,
         "stage2": {
             "classification": "REAL" if is_real else "FAKE",

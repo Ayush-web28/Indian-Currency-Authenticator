@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 COPY website/backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY website/backend/app.py ./
+COPY website/backend/*.py ./
 COPY model/ ./model/
 COPY --from=frontend /web/dist ./frontend-dist
 
