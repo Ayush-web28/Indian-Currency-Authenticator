@@ -1,5 +1,4 @@
 import csv
-import gc
 import io
 import os
 import secrets
@@ -49,19 +48,20 @@ stage2_model = None
 
 
 def build_model(path: Path) -> nn.Module:
-    model = models.resnet50(weights=None)
-    model.fc = nn.Sequential(
-        nn.Dropout(0.5),
-        nn.Linear(2048, 256),
-        nn.ReLU(),
-        nn.Dropout(0.3),
-        nn.Linear(256, 1),
-        nn.Sigmoid(),
-    )
-    state = torch.load(path, map_location=device, mmap=True, weights_only=True)
-    model.load_state_dict(state)
-    del state
-    gc.collect()
+    # Build on the meta device and attach the memory-mapped weights directly, so the
+    # weights live in reclaimable file-backed pages instead of a second private copy.
+    with torch.device("meta"):
+        model = models.resnet50(weights=None)
+        model.fc = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(2048, 256),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(256, 1),
+            nn.Sigmoid(),
+        )
+    state = torch.load(path, map_location="cpu", mmap=True, weights_only=True)
+    model.load_state_dict(state, assign=True)
     return model.to(device).eval()
 
 
