@@ -72,3 +72,6 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Feedback log
+feedback.db*
