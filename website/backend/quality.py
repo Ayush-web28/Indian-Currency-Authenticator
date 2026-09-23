@@ -29,7 +29,7 @@ def _laplacian_variance(gray: np.ndarray) -> float:
     return float(lap.var())
 
 
-def assess_quality(image: Image.Image) -> dict:
+def assess_quality(image: Image.Image, original_size: tuple[int, int] | None = None) -> dict:
     width, height = image.size
     scale = ANALYSIS_SIZE / max(width, height)
     if scale < 1:
@@ -40,7 +40,7 @@ def assess_quality(image: Image.Image) -> dict:
     brightness = float(gray.mean())
     contrast = float(gray.std())
     glare = float((gray >= 250).mean())
-    smallest_side = min(width, height)
+    smallest_side = min(original_size or (width, height))
 
     brightness_status = (
         _level(brightness, *DARK)
