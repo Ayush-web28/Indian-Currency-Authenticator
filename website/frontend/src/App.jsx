@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import BatchScreen from './BatchScreen.jsx';
+import QualityNote from './QualityNote.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -90,6 +91,7 @@ function ResultScreen({ result, preview, onReset }) {
         <h2>NOT A CURRENCY NOTE</h2>
         <p className="sub">Stage 1 confidence: {stage1.confidence}% not currency</p>
         <p className="hint">Please insert a clear image of an Indian banknote.</p>
+        <QualityNote quality={result.quality} />
         <div className="softkeys">
           <button className="key" onClick={onReset}>&gt; TRY ANOTHER NOTE</button>
         </div>
@@ -120,6 +122,8 @@ function ResultScreen({ result, preview, onReset }) {
         <div><span>DECISION STRENGTH</span><b className={`strength ${stage2.decision_strength.toLowerCase()}`}>{stage2.decision_strength}</b></div>
         <div><span>CURRENCY CHECK</span><b>{stage1.confidence}%</b></div>
       </div>
+
+      <QualityNote quality={result.quality} />
 
       <div className="softkeys">
         <button className="key" onClick={onReset}>&gt; CHECK ANOTHER NOTE</button>

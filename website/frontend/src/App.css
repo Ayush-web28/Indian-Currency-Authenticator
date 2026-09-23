@@ -235,6 +235,18 @@ body {
 .stars .on { color: var(--warn); }
 .stars .off { color: #23402f; }
 
+/* Image quality */
+.quality { width: 100%; font-size: 20px; }
+.quality-head { display: flex; justify-content: space-between; align-items: baseline; }
+.quality-head span { color: var(--ink-dim); }
+.quality-head b { font-weight: normal; }
+.quality.good .quality-head b { color: var(--real); }
+.quality.fair .quality-head b { color: var(--warn); }
+.quality.poor .quality-head b { color: var(--fake); }
+.quality-retake { color: var(--fake); margin-top: 4px; }
+.quality ul { list-style: none; margin-top: 4px; color: var(--warn); }
+.quality li::before { content: '! '; }
+
 /* Modes */
 .modes { display: flex; gap: 8px; padding: 0 0 12px; }
 
