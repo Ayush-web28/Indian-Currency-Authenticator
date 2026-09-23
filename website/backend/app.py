@@ -84,13 +84,7 @@ def strength(p: float) -> str:
     return "BORDERLINE" if distance < 10 else "MODERATE" if distance <= 30 else "STRONG"
 
 
-@app.post("/api/detect")
-async def detect(file: UploadFile = File(...)):
-    try:
-        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid image file")
-
+def analyze(image: Image.Image) -> dict:
     p1 = predict(stage1_model, image)
     is_currency = p1 > 0.5
     stage1 = {
@@ -117,6 +111,15 @@ async def detect(file: UploadFile = File(...)):
             "decision_strength": strength(p2),
         },
     }
+
+
+@app.post("/api/detect")
+async def detect(file: UploadFile = File(...)):
+    try:
+        image = Image.open(io.BytesIO(await file.read())).convert("RGB")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image file")
+    return analyze(image)
 
 
 @app.get("/health")
