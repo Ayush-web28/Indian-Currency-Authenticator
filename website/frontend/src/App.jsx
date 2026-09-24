@@ -84,6 +84,29 @@ function ScanScreen({ preview, step }) {
   );
 }
 
+const FOCUS_LABELS = [
+  ['upper left', 'upper centre', 'upper right'],
+  ['middle left', 'centre', 'middle right'],
+  ['lower left', 'lower centre', 'lower right'],
+];
+const BAND = [0, 0, 1, 1, 1, 2, 2];
+
+function focusArea(explanation) {
+  if (!explanation) return undefined;
+  const sums = FOCUS_LABELS.map((row) => row.map(() => 0));
+  let total = 0;
+  explanation.grid.forEach((row, y) => row.forEach((v, x) => {
+    sums[BAND[y]][BAND[x]] += v;
+    total += v;
+  }));
+  if (total === 0) return undefined;
+  const areas = sums
+    .flatMap((row, r) => row.map((sum, c) => ({ share: sum / total, label: FOCUS_LABELS[r][c] })))
+    .sort((a, b) => b.share - a.share);
+  const [best, runnerUp] = areas;
+  return best.share >= 0.3 && runnerUp.share <= best.share * 0.8 ? best.label : 'spread across the photo';
+}
+
 function toScan(result) {
   if (!result) return null;
   const { stage1, stage2, quality } = result;
@@ -95,6 +118,7 @@ function toScan(result) {
     risk: stage2.risk,
     decision_strength: stage2.decision_strength,
     quality: quality?.rating,
+    focus: focusArea(result.explanation),
   };
 }
 
