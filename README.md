@@ -1,4 +1,4 @@
-# 💵 Indian Fake Currency Detection Pipeline
+# 💵 Indian Currency Authenticator
 
 **AI-powered multi-stage fake Indian currency detection** using ResNet50 deep learning models with **3-stage sequential classification pipeline**.
 
@@ -292,7 +292,7 @@ This project is provided for educational and research purposes.
 ## 📧 Citation
 
 ```
-Indian Fake Currency Detection Pipeline
+Indian Currency Authenticator
 - Framework: PyTorch
 - Architecture: Two-stage ResNet50 classifiers
 - Stage 1: Currency Detection (91.96% accuracy)
