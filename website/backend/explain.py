@@ -30,7 +30,7 @@ def classify_with_cam(model: nn.Module, tensor: torch.Tensor) -> tuple[float, np
     peak = cam.max()
     if peak > 0:
         cam = cam / peak
-    return probability, cam.numpy()
+    return probability, cam.cpu().numpy()
 
 
 def edge_share(cam: np.ndarray) -> float:

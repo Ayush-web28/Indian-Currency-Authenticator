@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 import chat
 import feedback
+from explain import classify_with_cam, edge_share
 from imaging import MAX_UPLOAD_BYTES, ImageRejected, load_image
 from quality import assess_quality
 from ratelimit import SlidingWindow
@@ -95,7 +96,7 @@ def strength(p: float) -> str:
     return "BORDERLINE" if distance < 10 else "MODERATE" if distance <= 30 else "STRONG"
 
 
-def analyze(image: Image.Image, original_size: tuple[int, int] | None = None) -> dict:
+def analyze(image: Image.Image, original_size: tuple[int, int] | None = None, explain: bool = False) -> dict:
     quality = assess_quality(image, original_size)
     p1 = predict(stage1_model, image)
     is_currency = p1 > 0.5
@@ -106,10 +107,10 @@ def analyze(image: Image.Image, original_size: tuple[int, int] | None = None) ->
     if not is_currency:
         return {"timestamp": datetime.now().isoformat(), "quality": quality, "stage1": stage1, "stage2": None}
 
-    p2 = predict(stage2_model, image)
+    p2, cam = classify_with_cam(stage2_model, transform(image).unsqueeze(0).to(device))
     is_real = p2 > 0.5
     conf = p2 if is_real else 1 - p2
-    return {
+    result = {
         "timestamp": datetime.now().isoformat(),
         "quality": quality,
         "stage1": stage1,
@@ -124,6 +125,13 @@ def analyze(image: Image.Image, original_size: tuple[int, int] | None = None) ->
             "decision_strength": strength(p2),
         },
     }
+    if explain:
+        result["explanation"] = {
+            "target": "REAL" if is_real else "FAKE",
+            "grid": np.round(cam, 3).tolist(),
+            "edge_share": round(edge_share(cam), 3),
+        }
+    return result
 
 
 @app.post("/api/detect")
@@ -132,7 +140,7 @@ async def detect(file: UploadFile = File(...)):
         image, original_size = load_image(await file.read(MAX_UPLOAD_BYTES + 1))
     except ImageRejected as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return analyze(image, original_size)
+    return analyze(image, original_size, explain=True)
 
 
 MAX_BATCH = 20
