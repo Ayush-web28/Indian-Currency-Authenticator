@@ -229,6 +229,12 @@ class ScanContext(BaseModel):
     risk: Literal["LOW", "MEDIUM", "HIGH"] | None = None
     decision_strength: Literal["BORDERLINE", "MODERATE", "STRONG"] | None = None
     quality: Literal["GOOD", "FAIR", "POOR"] | None = None
+    focus: Literal[
+        "upper left", "upper centre", "upper right",
+        "middle left", "centre", "middle right",
+        "lower left", "lower centre", "lower right",
+        "spread across the photo",
+    ] | None = None
 
 
 class ChatIn(BaseModel):
