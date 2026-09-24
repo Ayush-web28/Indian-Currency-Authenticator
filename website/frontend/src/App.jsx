@@ -3,6 +3,7 @@ import BatchScreen from './BatchScreen.jsx';
 import ChatScreen from './ChatScreen.jsx';
 import QualityNote from './QualityNote.jsx';
 import FeedbackPrompt from './FeedbackPrompt.jsx';
+import Heatmap from './Heatmap.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -98,7 +99,8 @@ function toScan(result) {
 }
 
 function ResultScreen({ result, preview, onReset, onAsk }) {
-  const { stage1, stage2 } = result;
+  const [showWhy, setShowWhy] = useState(false);
+  const { stage1, stage2, explanation } = result;
 
   if (!stage2) {
     return (
@@ -120,7 +122,25 @@ function ResultScreen({ result, preview, onReset, onAsk }) {
   const isReal = stage2.classification === 'REAL';
   return (
     <div className={`result ${isReal ? 'real' : 'fake'}`}>
-      <img className="thumb" src={preview} alt="Inserted note" />
+      {showWhy && explanation ? (
+        <Heatmap src={preview} grid={explanation.grid} target={explanation.target} />
+      ) : (
+        <img className="thumb" src={preview} alt="Inserted note" />
+      )}
+      {showWhy && explanation && (
+        <div className="why">
+          <p>
+            {explanation.target === 'REAL' ? 'GREEN' : 'RED'} AREAS PUSHED THE MODEL TOWARD{' '}
+            {explanation.target === 'REAL' ? 'GENUINE' : 'COUNTERFEIT'}
+          </p>
+          <p className="why-note">Shows where the model looked, not why. It cannot name specific security features.</p>
+          {explanation.edge_share >= 0.65 && (
+            <p className="why-warn">
+              Most of the attention is on the edges of the photo, so the background may be influencing this result.
+            </p>
+          )}
+        </div>
+      )}
       <h2>{isReal ? 'GENUINE NOTE' : 'COUNTERFEIT SUSPECTED'}</h2>
       <p className="sub">Confidence {stage2.confidence}%</p>
 
@@ -146,6 +166,11 @@ function ResultScreen({ result, preview, onReset, onAsk }) {
 
       <div className="softkeys">
         <button className="key" onClick={onReset}>&gt; CHECK ANOTHER NOTE</button>
+        {explanation && (
+          <button className="key" onClick={() => setShowWhy((v) => !v)}>
+            &gt; {showWhy ? 'HIDE WHY' : 'SHOW WHY'}
+          </button>
+        )}
         <button className="key" onClick={onAsk}>&gt; ASK ABOUT THIS RESULT</button>
       </div>
     </div>
