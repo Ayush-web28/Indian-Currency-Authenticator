@@ -11,19 +11,40 @@ const SUGGESTIONS = [
 
 const VERDICT_LABEL = { REAL: 'GENUINE', FAKE: 'COUNTERFEIT SUSPECTED', NOT_NOTE: 'NOT A NOTE' };
 
+const STATUS_ATTEMPTS = 3;
+const STATUS_RETRY_DELAY_MS = 2500;
+
+async function fetchChatEnabled() {
+  for (let attempt = 0; attempt < STATUS_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetch(`${API_URL}/api/chat/status`);
+      if (res.ok) return Boolean((await res.json()).enabled);
+    } catch {
+      // the free server may still be waking up; try again
+    }
+    if (attempt < STATUS_ATTEMPTS - 1) {
+      await new Promise((resolve) => setTimeout(resolve, STATUS_RETRY_DELAY_MS));
+    }
+  }
+  return null;
+}
+
 export default function ChatScreen({ scan }) {
-  const [enabled, setEnabled] = useState(null);
+  const [status, setStatus] = useState('loading');
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
   const endRef = useRef(null);
 
+  const checkStatus = async () => {
+    setStatus('loading');
+    const enabled = await fetchChatEnabled();
+    setStatus(enabled === null ? 'unreachable' : enabled ? 'on' : 'off');
+  };
+
   useEffect(() => {
-    fetch(`${API_URL}/api/chat/status`)
-      .then((r) => r.json())
-      .then((d) => setEnabled(Boolean(d.enabled)))
-      .catch(() => setEnabled(false));
+    checkStatus();
   }, []);
 
   useEffect(() => {
@@ -57,11 +78,23 @@ export default function ChatScreen({ scan }) {
     request(history);
   };
 
-  if (enabled === null) {
+  if (status === 'loading') {
     return <p className="hint">CONNECTING TO HELP DESK...</p>;
   }
 
-  if (!enabled) {
+  if (status === 'unreachable') {
+    return (
+      <div className="chat chat-offline">
+        <p className="prompt">CANNOT REACH HELP DESK</p>
+        <p className="hint">The server may be waking up. Please try again in a moment.</p>
+        <div className="softkeys">
+          <button className="key" onClick={checkStatus}>&gt; TRY AGAIN</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === 'off') {
     return (
       <div className="chat chat-offline">
         <p className="prompt">HELP DESK OFFLINE</p>
