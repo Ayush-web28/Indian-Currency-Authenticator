@@ -25,7 +25,7 @@ from imaging import MAX_UPLOAD_BYTES, ImageRejected, load_image
 from quality import assess_quality
 from ratelimit import SlidingWindow
 
-app = FastAPI(title="Fake Currency Detection API")
+app = FastAPI(title="Indian Currency Authenticator API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
