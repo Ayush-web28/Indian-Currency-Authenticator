@@ -34,7 +34,7 @@ Stage 2: Real/Fake Classifier (Real vs Fake Currency)
 | **Recall** | High |
 | **AUC-ROC** | 0.95+ |
 
-**Dataset:** 7,442 existing currency images + ~5,700 downloaded non-currency images (people, furniture, food, animals, vehicles, books, scenes)
+**Dataset:** 7,442 existing currency images + about 1,344 downloaded non-currency images (people, furniture, food, animals, vehicles, books, indoor scenes), 8,786 images in total, split 6,150 train / 1,318 validation / 1,318 test. The downloader targeted 4,200 non-currency images; about 1,344 were available in the final dataset.
 
 ### **Stage 2: Real/Fake Classifier**
 | Metric | Score |
