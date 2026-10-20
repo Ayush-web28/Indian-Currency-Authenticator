@@ -8,12 +8,12 @@ from google.genai import types
 log = logging.getLogger("chat")
 
 PROVIDER = os.environ.get("CHAT_PROVIDER", "gemini").lower()
-DEFAULT_MODELS = {"gemini": "gemini-3.8-flash"}
-DEFAULT_FALLBACKS = {"gemini": "gemini-3.5-flash-lite"}
+DEFAULT_MODELS = {"gemini": "gemini-3.5-flash-lite"}
+DEFAULT_FALLBACKS = {"gemini": "gemini-3.8-flash"}
 MODEL = os.environ.get("CHAT_MODEL") or DEFAULT_MODELS.get(PROVIDER)
 KEY_VARS = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY"}
 REFUSAL_TEXT = "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
-MAX_TOKENS = 2000
+MAX_TOKENS = 1000
 MAX_HISTORY = 10
 MAX_MESSAGE_CHARS = 10000
 
@@ -138,19 +138,31 @@ def _gemini_models() -> list[str]:
     return [MODEL] + ([fallback] if fallback and fallback != MODEL else [])
 
 
+def _thinking_config_for_model(model: str) -> types.ThinkingConfig:
+    """Return the lowest-latency thinking configuration supported by the model.
+
+    Gemini 3.8 and 3.7 Flash support 'low' to minimize latency ('minimal' raises 400).
+    Gemini 3.5 and 3.1 Flash-Lite support 'minimal' directly.
+    """
+    m = model.lower()
+    if "3.8" in m or "3.7" in m:
+        return types.ThinkingConfig(thinking_level="low")
+    return types.ThinkingConfig(thinking_level="minimal")
+
+
 def _ask_gemini(system: str, history: list[dict]) -> str:
     contents = [
         types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part(text=m["content"])])
         for m in history
     ]
-    config = types.GenerateContentConfig(
-        system_instruction=system,
-        max_output_tokens=MAX_TOKENS,
-        thinking_config=types.ThinkingConfig(thinking_level="minimal"),
-    )
 
     failure = ChatUnavailable
     for model in _gemini_models():
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=MAX_TOKENS,
+            thinking_config=_thinking_config_for_model(model),
+        )
         try:
             response = _get_client().models.generate_content(model=model, contents=contents, config=config)
         except genai_errors.ClientError as e:
