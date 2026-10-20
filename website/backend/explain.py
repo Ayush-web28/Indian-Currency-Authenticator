@@ -8,8 +8,8 @@ def _backbone_features(model: nn.Module, x: torch.Tensor) -> torch.Tensor:
     return model.layer4(model.layer3(model.layer2(model.layer1(x))))
 
 
-def classify_with_cam(model: nn.Module, tensor: torch.Tensor) -> tuple[float, np.ndarray]:
-    """Return (probability of REAL, 7x7 heat map in 0..1 for the predicted class).
+def classify_with_cam(model: nn.Module, tensor: torch.Tensor) -> tuple[float, np.ndarray, np.ndarray]:
+    """Return (probability of REAL, 7x7 heat map in 0..1, 2048-D normalized embedding).
 
     The backbone runs once without gradients; only the small classifier head is
     differentiated, so this costs almost nothing beyond a normal prediction. The
@@ -17,6 +17,10 @@ def classify_with_cam(model: nn.Module, tensor: torch.Tensor) -> tuple[float, np
     """
     with torch.no_grad():
         features = _backbone_features(model, tensor)
+        pooled = torch.flatten(model.avgpool(features), 1)
+        norm = torch.norm(pooled, dim=1, keepdim=True)
+        embedding = (pooled / (norm + 1e-7))[0].cpu().numpy()
+
     features = features.detach().requires_grad_(True)
 
     with torch.enable_grad():
@@ -30,7 +34,7 @@ def classify_with_cam(model: nn.Module, tensor: torch.Tensor) -> tuple[float, np
     peak = cam.max()
     if peak > 0:
         cam = cam / peak
-    return probability, cam.cpu().numpy()
+    return probability, cam.cpu().numpy(), embedding
 
 
 def edge_share(cam: np.ndarray) -> float:

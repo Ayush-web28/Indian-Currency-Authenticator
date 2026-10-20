@@ -20,7 +20,8 @@ from pydantic import BaseModel, Field
 
 import chat
 import feedback
-from explain import classify_with_cam, edge_share
+import memory
+from explain import _backbone_features, classify_with_cam, edge_share
 from imaging import MAX_UPLOAD_BYTES, ImageRejected, load_image
 from quality import assess_quality
 from ratelimit import SlidingWindow
@@ -73,10 +74,18 @@ def load_models():
     stage2_model = build_model(MODEL_DIR / "best_real_fake_model.pth")
 
 
-def predict(model: nn.Module, image: Image.Image) -> float:
+RECENT_SCANS: dict[str, dict] = {}
+
+
+def predict_with_embedding(model: nn.Module, image: Image.Image) -> tuple[float, np.ndarray]:
     tensor = transform(image).unsqueeze(0).to(device)
     with torch.inference_mode():
-        return model(tensor).item()
+        features = _backbone_features(model, tensor)
+        pooled = torch.flatten(model.avgpool(features), 1)
+        prob = model.fc(pooled).item()
+        norm = torch.norm(pooled, dim=1, keepdim=True)
+        emb = (pooled / (norm + 1e-7))[0].cpu().numpy()
+        return prob, emb
 
 
 def grade(is_real: bool, conf: float) -> str:
@@ -97,33 +106,69 @@ def strength(p: float) -> str:
 
 
 def analyze(image: Image.Image, original_size: tuple[int, int] | None = None, explain: bool = False) -> dict:
+    note_token = secrets.token_hex(8)
     quality = assess_quality(image, original_size)
-    p1 = predict(stage1_model, image)
+    p1, emb1 = predict_with_embedding(stage1_model, image)
+
+    # Check Stage 1 memory for prior corrections
+    mem1 = memory.lookup_memory(emb1, stage=1)
+    if mem1:
+        if mem1["label"] == "CURRENCY":
+            p1 = 0.99 if mem1["action"] == "override" else (p1 * 0.4 + 0.6)
+        elif mem1["label"] == "NOT_NOTE":
+            p1 = 0.01 if mem1["action"] == "override" else (p1 * 0.4)
+
     is_currency = p1 > 0.5
     stage1 = {
         "is_currency": is_currency,
         "confidence": round((p1 if is_currency else 1 - p1) * 100, 2),
     }
-    if not is_currency:
-        return {"timestamp": datetime.now().isoformat(), "quality": quality, "stage1": stage1, "stage2": None}
+    if mem1:
+        stage1["memory_match"] = mem1
 
-    p2, cam = classify_with_cam(stage2_model, transform(image).unsqueeze(0).to(device))
+    if not is_currency:
+        RECENT_SCANS[note_token] = {"emb1": emb1, "emb2": None}
+        if len(RECENT_SCANS) > 100:
+            RECENT_SCANS.pop(next(iter(RECENT_SCANS)))
+        return {
+            "note_token": note_token,
+            "timestamp": datetime.now().isoformat(),
+            "quality": quality,
+            "stage1": stage1,
+            "stage2": None,
+        }
+
+    p2, cam, emb2 = classify_with_cam(stage2_model, transform(image).unsqueeze(0).to(device))
+
+    # Check Stage 2 memory for prior corrections
+    mem2 = memory.lookup_memory(emb2, stage=2)
+    if mem2:
+        if mem2["label"] == "REAL":
+            p2 = 0.98 if mem2["action"] == "override" else (p2 * 0.4 + 0.58)
+        elif mem2["label"] == "FAKE":
+            p2 = 0.02 if mem2["action"] == "override" else (p2 * 0.4 + 0.01)
+
     is_real = p2 > 0.5
     conf = p2 if is_real else 1 - p2
+    stage2_dict = {
+        "classification": "REAL" if is_real else "FAKE",
+        "confidence": round(conf * 100, 2),
+        "percent_real": round(p2 * 100, 2),
+        "percent_fake": round((1 - p2) * 100, 2),
+        "grade": grade(is_real, conf),
+        "risk": risk(is_real, conf),
+        "stars": max(1, min(5, round(p2 * 5))),
+        "decision_strength": strength(p2),
+    }
+    if mem2:
+        stage2_dict["memory_match"] = mem2
+
     result = {
+        "note_token": note_token,
         "timestamp": datetime.now().isoformat(),
         "quality": quality,
         "stage1": stage1,
-        "stage2": {
-            "classification": "REAL" if is_real else "FAKE",
-            "confidence": round(conf * 100, 2),
-            "percent_real": round(p2 * 100, 2),
-            "percent_fake": round((1 - p2) * 100, 2),
-            "grade": grade(is_real, conf),
-            "risk": risk(is_real, conf),
-            "stars": max(1, min(5, round(p2 * 5))),
-            "decision_strength": strength(p2),
-        },
+        "stage2": stage2_dict,
     }
     if explain:
         result["explanation"] = {
@@ -131,6 +176,10 @@ def analyze(image: Image.Image, original_size: tuple[int, int] | None = None, ex
             "grid": np.round(cam, 3).tolist(),
             "edge_share": round(edge_share(cam), 3),
         }
+
+    RECENT_SCANS[note_token] = {"emb1": emb1, "emb2": emb2}
+    if len(RECENT_SCANS) > 100:
+        RECENT_SCANS.pop(next(iter(RECENT_SCANS)))
     return result
 
 
@@ -179,15 +228,64 @@ class FeedbackIn(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=100)
     quality: Literal["GOOD", "FAIR", "POOR"] | None = None
     comment: str = Field(default="", max_length=300)
+    note_token: str | None = None
 
 
 @app.post("/api/feedback")
 def submit_feedback(body: FeedbackIn):
     try:
-        feedback_id = feedback.add_feedback(**body.model_dump())
+        feedback_id = feedback.add_feedback(
+            predicted=body.predicted,
+            actual=body.actual,
+            confidence=body.confidence,
+            quality=body.quality,
+            comment=body.comment,
+        )
     except feedback.FeedbackFull:
         raise HTTPException(status_code=503, detail="Feedback storage is full")
-    return {"id": feedback_id}
+
+    # If this feedback is a correction, store the image embedding in memory!
+    memory_registered = False
+    if body.note_token and body.note_token in RECENT_SCANS and body.predicted != body.actual:
+        scan_data = RECENT_SCANS[body.note_token]
+        comment_text = body.comment or f"User correction ({body.predicted} -> {body.actual})"
+        if body.actual == "NOT_NOTE" and scan_data.get("emb1") is not None:
+            memory.add_memory(scan_data["emb1"], stage=1, label="NOT_NOTE", comment=comment_text)
+            memory_registered = True
+        elif body.predicted == "NOT_NOTE" and body.actual in ("REAL", "FAKE") and scan_data.get("emb1") is not None:
+            memory.add_memory(scan_data["emb1"], stage=1, label="CURRENCY", comment=comment_text)
+            if scan_data.get("emb2") is not None:
+                memory.add_memory(scan_data["emb2"], stage=2, label=body.actual, comment=comment_text)
+            memory_registered = True
+        elif body.actual in ("REAL", "FAKE") and scan_data.get("emb2") is not None:
+            memory.add_memory(scan_data["emb2"], stage=2, label=body.actual, comment=comment_text)
+            memory_registered = True
+
+    return {"id": feedback_id, "memory_registered": memory_registered}
+
+
+@app.get("/api/memory/list")
+def list_memories(x_admin_token: str | None = Header(default=None)):
+    expected = os.environ.get("ADMIN_TOKEN")
+    if not expected or not x_admin_token or not secrets.compare_digest(x_admin_token, expected):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    return {"memories": memory.list_memories()}
+
+
+class MemoryAction(BaseModel):
+    id: int
+    approved: bool = True
+
+
+@app.post("/api/memory/approve")
+def approve_memory(body: MemoryAction, x_admin_token: str | None = Header(default=None)):
+    expected = os.environ.get("ADMIN_TOKEN")
+    if not expected or not x_admin_token or not secrets.compare_digest(x_admin_token, expected):
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    ok = memory.review_memory(body.id, body.approved)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"status": "ok", "id": body.id, "approved": body.approved}
 
 
 @app.get("/api/feedback/export")
