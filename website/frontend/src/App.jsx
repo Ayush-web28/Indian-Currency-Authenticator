@@ -132,9 +132,19 @@ function ResultScreen({ result, preview, onReset, onAsk }) {
         <img className="thumb" src={preview} alt="Inserted note" />
         <h2>NOT A CURRENCY NOTE</h2>
         <p className="sub">Stage 1 confidence: {stage1.confidence}% not currency</p>
+        {stage1.memory_match && (
+          <div className="memory-badge">
+            [MEMORY MATCH: {stage1.memory_match.action.toUpperCase()} ({Math.round(stage1.memory_match.similarity * 100)}% match to prior correction)]
+          </div>
+        )}
         <p className="hint">Please insert a clear image of an Indian banknote.</p>
         <QualityNote quality={result.quality} />
-        <FeedbackPrompt predicted="NOT_NOTE" confidence={stage1.confidence} quality={result.quality?.rating} />
+        <FeedbackPrompt
+          predicted="NOT_NOTE"
+          confidence={stage1.confidence}
+          quality={result.quality?.rating}
+          noteToken={result.note_token}
+        />
         <div className="softkeys">
           <button className="key" onClick={onReset}>&gt; TRY ANOTHER NOTE</button>
           <button className="key" onClick={onAsk}>&gt; ASK ABOUT THIS</button>
@@ -167,6 +177,11 @@ function ResultScreen({ result, preview, onReset, onAsk }) {
       )}
       <h2>{isReal ? 'GENUINE NOTE' : 'COUNTERFEIT SUSPECTED'}</h2>
       <p className="sub">Confidence {stage2.confidence}%</p>
+      {stage2.memory_match && (
+        <div className="memory-badge">
+          [MEMORY VERIFIED: {stage2.memory_match.action.toUpperCase()} ({Math.round(stage2.memory_match.similarity * 100)}% visual match to prior correction)]
+        </div>
+      )}
 
       <div className="meter" role="img" aria-label={`${stage2.percent_real}% real`}>
         <div className="meter-real" style={{ width: `${stage2.percent_real}%` }} />
@@ -183,10 +198,18 @@ function ResultScreen({ result, preview, onReset, onAsk }) {
         <div><span>RATING</span><Stars count={stage2.stars} /></div>
         <div><span>DECISION STRENGTH</span><b className={`strength ${stage2.decision_strength.toLowerCase()}`}>{stage2.decision_strength}</b></div>
         <div><span>CURRENCY CHECK</span><b>{stage1.confidence}%</b></div>
+        {stage2.memory_match && (
+          <div><span>MEMORY CORRECTION</span><b className="memory-tag">ACTIVE ({Math.round(stage2.memory_match.similarity * 100)}%)</b></div>
+        )}
       </div>
 
       <QualityNote quality={result.quality} />
-      <FeedbackPrompt predicted={stage2.classification} confidence={stage2.confidence} quality={result.quality?.rating} />
+      <FeedbackPrompt
+        predicted={stage2.classification}
+        confidence={stage2.confidence}
+        quality={result.quality?.rating}
+        noteToken={result.note_token}
+      />
 
       <div className="softkeys">
         <button className="key" onClick={onReset}>&gt; CHECK ANOTHER NOTE</button>

@@ -235,6 +235,22 @@ body {
 .stars .on { color: var(--warn); }
 .stars .off { color: #23402f; }
 
+.memory-badge {
+  font-size: 19px;
+  color: var(--warn);
+  border: 1px dashed var(--warn);
+  background: rgba(255, 176, 0, 0.08);
+  padding: 6px 10px;
+  border-radius: 4px;
+  text-align: center;
+  width: 100%;
+  margin: 4px 0;
+}
+
+.memory-tag {
+  color: var(--warn);
+}
+
 /* Heat map */
 .heatmap {
   position: relative;

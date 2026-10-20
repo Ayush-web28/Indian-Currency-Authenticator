@@ -8,9 +8,10 @@ const LABELS = {
   NOT_NOTE: 'NOT A NOTE',
 };
 
-export default function FeedbackPrompt({ predicted, confidence, quality }) {
+export default function FeedbackPrompt({ predicted, confidence, quality, noteToken }) {
   const [step, setStep] = useState('ask');
   const [error, setError] = useState(null);
+  const [memorySaved, setMemorySaved] = useState(false);
 
   const send = async (actual) => {
     setStep('sending');
@@ -19,9 +20,13 @@ export default function FeedbackPrompt({ predicted, confidence, quality }) {
       const res = await fetch(`${API_URL}/api/feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ predicted, actual, confidence, quality }),
+        body: JSON.stringify({ predicted, actual, confidence, quality, note_token: noteToken }),
       });
       if (!res.ok) throw new Error();
+      const data = await res.json().catch(() => ({}));
+      if (data.memory_registered) {
+        setMemorySaved(true);
+      }
       setStep('done');
     } catch {
       setError('Could not send feedback. Please try again.');
@@ -30,7 +35,11 @@ export default function FeedbackPrompt({ predicted, confidence, quality }) {
   };
 
   if (step === 'done') {
-    return <p className="feedback feedback-done">THANK YOU - FEEDBACK RECORDED</p>;
+    return (
+      <p className="feedback feedback-done">
+        {memorySaved ? 'CORRECTION SAVED - MODEL MEMORY UPDATED FOR NEXT TIME' : 'THANK YOU - FEEDBACK RECORDED'}
+      </p>
+    );
   }
 
   if (step === 'wrong') {
