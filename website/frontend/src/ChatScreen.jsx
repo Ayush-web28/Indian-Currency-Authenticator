@@ -61,7 +61,21 @@ export default function ChatScreen({ scan }) {
         body: JSON.stringify({ messages: history, ...(scan ? { scan } : {}) }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Something went wrong.');
+      if (!res.ok) {
+        let message = 'Something went wrong.';
+        if (typeof data.detail === 'string') {
+          message = data.detail;
+        } else if (Array.isArray(data.detail) && data.detail.length > 0 && data.detail[0]?.msg) {
+          message = data.detail[0].msg;
+        } else if (res.status === 429) {
+          message = 'Too many messages. Please wait a moment.';
+        } else if (res.status === 502 || res.status === 504) {
+          message = 'The assistant took too long to answer. Please try again.';
+        } else if (res.status === 503) {
+          message = 'The help desk is temporarily unavailable. Please try again shortly.';
+        }
+        throw new Error(message);
+      }
       setMessages([...history, { role: 'assistant', content: data.reply }]);
     } catch (e) {
       setError(e.message === 'Failed to fetch' ? 'Cannot reach the server.' : e.message);
@@ -72,7 +86,10 @@ export default function ChatScreen({ scan }) {
   const send = (text) => {
     const content = text.trim();
     if (!content || pending) return;
-    const history = [...messages, { role: 'user', content }];
+    const clean = messages.length > 0 && messages[messages.length - 1].role === 'user'
+      ? messages.slice(0, -1)
+      : messages;
+    const history = [...clean, { role: 'user', content }];
     setMessages(history);
     setDraft('');
     request(history);
