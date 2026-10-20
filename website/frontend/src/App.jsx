@@ -131,7 +131,14 @@ function ResultScreen({ result, preview, onReset, onAsk }) {
       <div className="result neutral">
         <img className="thumb" src={preview} alt="Inserted note" />
         <h2>NOT A CURRENCY NOTE</h2>
-        <p className="sub">Stage 1 confidence: {stage1.confidence}% not currency</p>
+        <p className="sub">
+          Stage 1: {stage1.confidence}% not currency &bull; Gate: {stage1.model?.includes('clip') ? 'OpenAI CLIP' : 'ResNet-50'}
+        </p>
+        {stage1.clip_top_label && (
+          <p className="hint" style={{ fontSize: '0.82rem', opacity: 0.85, marginTop: '4px' }}>
+            CLIP match: &ldquo;{stage1.clip_top_label}&rdquo;
+          </p>
+        )}
         {stage1.memory_match && (
           <div className="memory-badge">
             [MEMORY MATCH: {stage1.memory_match.action.toUpperCase()} ({Math.round(stage1.memory_match.similarity * 100)}% match to prior correction)]
@@ -197,7 +204,7 @@ function ResultScreen({ result, preview, onReset, onAsk }) {
         <div><span>RISK LEVEL</span><b className={`risk ${stage2.risk.toLowerCase()}`}>{stage2.risk}</b></div>
         <div><span>RATING</span><Stars count={stage2.stars} /></div>
         <div><span>DECISION STRENGTH</span><b className={`strength ${stage2.decision_strength.toLowerCase()}`}>{stage2.decision_strength}</b></div>
-        <div><span>CURRENCY CHECK</span><b>{stage1.confidence}%</b></div>
+        <div><span>CURRENCY CHECK</span><b>{stage1.confidence}% {stage1.model?.includes('clip') ? '(CLIP ViT-B/32)' : '(ResNet-50)'}</b></div>
         {stage2.memory_match && (
           <div><span>MEMORY CORRECTION</span><b className="memory-tag">ACTIVE ({Math.round(stage2.memory_match.similarity * 100)}%)</b></div>
         )}
