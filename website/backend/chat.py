@@ -8,8 +8,8 @@ from google.genai import types
 log = logging.getLogger("chat")
 
 PROVIDER = os.environ.get("CHAT_PROVIDER", "gemini").lower()
-DEFAULT_MODELS = {"gemini": "gemini-3.5-flash-lite"}
-DEFAULT_FALLBACKS = {"gemini": "gemini-3.8-flash"}
+DEFAULT_MODELS = {"gemini": "gemini-2.5-flash"}
+DEFAULT_FALLBACKS = {"gemini": "gemini-2.5-flash-lite"}
 MODEL = os.environ.get("CHAT_MODEL") or DEFAULT_MODELS.get(PROVIDER)
 KEY_VARS = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY"}
 REFUSAL_TEXT = "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
@@ -134,26 +134,30 @@ def ask(messages: list[dict], scan: dict | None = None) -> str:
 
 
 def _gemini_models() -> list[str]:
-    primary = os.environ.get("CHAT_MODEL") or DEFAULT_MODELS.get(PROVIDER, "gemini-3.5-flash-lite")
-    fallback = os.environ.get("CHAT_FALLBACK_MODEL") or DEFAULT_FALLBACKS.get(PROVIDER, "gemini-3.8-flash")
+    env_primary = os.environ.get("CHAT_MODEL")
+    env_fallback = os.environ.get("CHAT_FALLBACK_MODEL")
 
-    # Prioritize the responsive flash-lite model first to achieve sub-2-second latency
-    # and avoid demand queuing on heavy frontier reasoning models like 3.8-flash.
     candidates = []
-    for m in [primary, fallback]:
+    for m in [env_primary, "gemini-2.5-flash", "gemini-2.5-flash-lite", env_fallback]:
         if m and m not in candidates:
             candidates.append(m)
-    candidates.sort(key=lambda m: (0 if "lite" in m.lower() else 1))
+
+    # Sort so 2.5-flash models (which support thinking_budget=0 for zero reasoning delay)
+    # run first, followed by lite models, avoiding slow frontier reasoning models.
+    candidates.sort(key=lambda m: (0 if "2.5" in m.lower() else 1 if "lite" in m.lower() else 2))
     return candidates
 
 
 def _thinking_config_for_model(model: str) -> types.ThinkingConfig:
     """Return the lowest-latency thinking configuration supported by the model.
 
-    Gemini 3.8 and 3.7 Flash support 'low' to minimize latency ('minimal' raises 400).
+    Gemini 2.5 models support thinking_budget=0 to completely disable reasoning latency.
+    Gemini 3.8 and 3.7 Flash support 'low' to minimize latency.
     Gemini 3.5 and 3.1 Flash-Lite support 'minimal' directly.
     """
     m = model.lower()
+    if "2.5" in m or "2.0" in m or "1.5" in m:
+        return types.ThinkingConfig(thinking_budget=0)
     if "3.8" in m or "3.7" in m:
         return types.ThinkingConfig(thinking_level="low")
     return types.ThinkingConfig(thinking_level="minimal")
