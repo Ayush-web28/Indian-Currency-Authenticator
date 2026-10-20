@@ -19,6 +19,7 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 import chat
+import clip_gate
 import feedback
 import memory
 from explain import _backbone_features, classify_with_cam, edge_share
@@ -112,17 +113,46 @@ def analyze(image: Image.Image, original_size: tuple[int, int] | None = None, ex
 
     # Check Stage 1 memory for prior corrections
     mem1 = memory.lookup_memory(emb1, stage=1)
+
+    # Check OpenAI CLIP zero-shot gate if configured
+    clip_result = clip_gate.query_clip(image)
+
     if mem1:
+        # Prior user feedback takes top priority
         if mem1["label"] == "CURRENCY":
             p1 = 0.99 if mem1["action"] == "override" else (p1 * 0.4 + 0.6)
+            is_currency = True
         elif mem1["label"] == "NOT_NOTE":
             p1 = 0.01 if mem1["action"] == "override" else (p1 * 0.4)
+            is_currency = False
+        else:
+            is_currency = p1 > 0.5
+        gate_model = "memory_override"
+        gate_type = "memory"
+        clip_details = None
+    elif clip_result is not None:
+        # OpenAI CLIP zero-shot gate decision
+        is_currency = clip_result["is_currency"]
+        p1 = clip_result["p_raw"]
+        gate_model = clip_result["model"]
+        gate_type = clip_result["gate_type"]
+        clip_details = clip_result
+    else:
+        # ResNet-50 supervised classifier fallback
+        is_currency = p1 > 0.5
+        gate_model = "resnet50_binary"
+        gate_type = "resnet50_supervised"
+        clip_details = None
 
-    is_currency = p1 > 0.5
     stage1 = {
         "is_currency": is_currency,
-        "confidence": round((p1 if is_currency else 1 - p1) * 100, 2),
+        "confidence": round((p1 if is_currency else 1.0 - p1) * 100, 2),
+        "model": gate_model,
+        "gate_type": gate_type,
     }
+    if clip_details:
+        stage1["clip_top_label"] = clip_details.get("top_label")
+        stage1["clip_top_score"] = clip_details.get("top_score")
     if mem1:
         stage1["memory_match"] = mem1
 
@@ -377,7 +407,14 @@ def chat_endpoint(body: ChatIn, request: Request):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "models_loaded": stage1_model is not None and stage2_model is not None}
+    return {
+        "status": "ok",
+        "models_loaded": stage1_model is not None and stage2_model is not None,
+        "stage1_gate": {
+            "clip_configured": clip_gate.is_clip_configured(),
+            "active_model": clip_gate.CLIP_MODEL_NAME if clip_gate.is_clip_configured() else "resnet50_binary",
+        },
+    }
 
 
 if FRONTEND_DIR.is_dir():
