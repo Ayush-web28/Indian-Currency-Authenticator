@@ -95,13 +95,35 @@ def describe_scan(scan: dict) -> str:
     )
 
 
+def _normalize_history(messages: list[dict]) -> list[dict]:
+    """Ensure history begins with user and strictly alternates user/assistant turns.
+
+    Consecutive messages from the same role are combined with double newlines.
+    """
+    raw = [m for m in messages[-MAX_HISTORY:] if m.get("content", "").strip()]
+    while raw and raw[0]["role"] != "user":
+        raw.pop(0)
+    if not raw:
+        return []
+
+    normalized = []
+    for m in raw:
+        role = m["role"]
+        content = m["content"].strip()
+        if not content:
+            continue
+        if normalized and normalized[-1]["role"] == role:
+            normalized[-1]["content"] += f"\n\n{content}"
+        else:
+            normalized.append({"role": role, "content": content})
+    return normalized
+
+
 def ask(messages: list[dict], scan: dict | None = None) -> str:
     if not enabled():
         raise ChatDisabled
 
-    history = list(messages[-MAX_HISTORY:])
-    while history and history[0]["role"] != "user":
-        history.pop(0)
+    history = _normalize_history(messages)
     if not history:
         raise ValueError("conversation must contain a user message")
 
@@ -121,23 +143,36 @@ def _ask_gemini(system: str, history: list[dict]) -> str:
         types.Content(role="user" if m["role"] == "user" else "model", parts=[types.Part(text=m["content"])])
         for m in history
     ]
-    config = types.GenerateContentConfig(system_instruction=system, max_output_tokens=MAX_TOKENS)
+    config = types.GenerateContentConfig(
+        system_instruction=system,
+        max_output_tokens=MAX_TOKENS,
+        thinking_config=types.ThinkingConfig(thinking_level="minimal"),
+    )
 
     failure = ChatUnavailable
     for model in _gemini_models():
         try:
             response = _get_client().models.generate_content(model=model, contents=contents, config=config)
         except genai_errors.ClientError as e:
-            if e.code == 429:
+            if e.code == 400 and "thinking" in str(e).lower():
+                base_config = types.GenerateContentConfig(system_instruction=system, max_output_tokens=MAX_TOKENS)
+                try:
+                    response = _get_client().models.generate_content(model=model, contents=contents, config=base_config)
+                except Exception as inner_e:
+                    log.warning("Chat upstream error on %s without thinking_config (%s): %s", model, type(inner_e).__name__, inner_e)
+                    failure = ChatUnavailable
+                    continue
+            elif e.code == 429:
                 log.warning("Chat rate limited on %s: %s", model, e)
                 failure = ChatRateLimited
                 continue
-            if e.code == 404:
+            elif e.code == 404:
                 log.error("Chat model not found: %s", model)
                 failure = ChatDisabled
                 continue
-            log.error("Chat misconfigured on %s (%s): %s", model, e.code, e)
-            raise ChatDisabled
+            else:
+                log.error("Chat misconfigured on %s (%s): %s", model, e.code, e)
+                raise ChatDisabled
         except Exception as e:
             log.warning("Chat upstream error on %s (%s): %s", model, type(e).__name__, e)
             failure = ChatUnavailable
