@@ -38,7 +38,7 @@ at a bank.
 or series, say so and point to the Reserve Bank of India's official guidance instead of guessing.
 - Stay on topic. If asked about something unrelated, politely say you can only help with banknotes and this \
 website.
-- Be concise: short paragraphs or a short list, plain language, no long preambles."""
+- Be concise and direct: 2-4 short bullet points or 1-2 plain sentences. No filler greetings or long essays."""
 
 
 class ChatDisabled(Exception):
@@ -67,11 +67,11 @@ def _get_client():
         if PROVIDER == "openai":
             from openai import OpenAI
 
-            _client = OpenAI(timeout=30.0, max_retries=1)
+            _client = OpenAI(timeout=15.0, max_retries=1)
         else:
             _client = genai.Client(
                 api_key=os.environ["GEMINI_API_KEY"],
-                http_options=types.HttpOptions(timeout=30000),
+                http_options=types.HttpOptions(timeout=15000),
             )
     return _client
 
@@ -134,8 +134,17 @@ def ask(messages: list[dict], scan: dict | None = None) -> str:
 
 
 def _gemini_models() -> list[str]:
-    fallback = os.environ.get("CHAT_FALLBACK_MODEL", DEFAULT_FALLBACKS["gemini"])
-    return [MODEL] + ([fallback] if fallback and fallback != MODEL else [])
+    primary = os.environ.get("CHAT_MODEL") or DEFAULT_MODELS.get(PROVIDER, "gemini-3.5-flash-lite")
+    fallback = os.environ.get("CHAT_FALLBACK_MODEL") or DEFAULT_FALLBACKS.get(PROVIDER, "gemini-3.8-flash")
+
+    # Prioritize the responsive flash-lite model first to achieve sub-2-second latency
+    # and avoid demand queuing on heavy frontier reasoning models like 3.8-flash.
+    candidates = []
+    for m in [primary, fallback]:
+        if m and m not in candidates:
+            candidates.append(m)
+    candidates.sort(key=lambda m: (0 if "lite" in m.lower() else 1))
+    return candidates
 
 
 def _thinking_config_for_model(model: str) -> types.ThinkingConfig:

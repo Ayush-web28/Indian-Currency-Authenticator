@@ -13,6 +13,6 @@ services:
       - key: CHAT_PROVIDER
         value: gemini
       - key: CHAT_MODEL
-        value: gemini-3.8-flash
-      - key: CHAT_FALLBACK_MODEL
         value: gemini-3.5-flash-lite
+      - key: CHAT_FALLBACK_MODEL
+        value: gemini-3.8-flash
