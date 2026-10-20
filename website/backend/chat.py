@@ -15,7 +15,7 @@ KEY_VARS = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY"}
 REFUSAL_TEXT = "Sorry, I can't help with that request. Ask me about banknote security features or your scan result."
 MAX_TOKENS = 2000
 MAX_HISTORY = 10
-MAX_MESSAGE_CHARS = 1000
+MAX_MESSAGE_CHARS = 10000
 
 SYSTEM_PROMPT = """You are the help assistant inside "Indian Currency Authenticator", a website that \
 uses two AI models to check a photo of an Indian banknote: stage 1 decides whether the image is a \
