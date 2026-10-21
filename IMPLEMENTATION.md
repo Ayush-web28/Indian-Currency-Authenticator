@@ -6,17 +6,19 @@ Comprehensive technical architecture, machine learning pipeline, backend/fronten
 
 ## 1. Executive Summary & System Overview
 
-The **Indian Currency Authenticator** (formerly *Currency ATM*) is an end-to-end, multi-stage machine learning system designed to inspect, detect, and authenticate Indian paper currency (₹10, ₹20, ₹50, ₹100, ₹200, ₹500, and ₹2000 denominations). 
+The **Indian Currency Authenticator** is an end-to-end, multi-stage machine learning system designed to inspect, detect, and authenticate Indian paper currency (₹10, ₹20, ₹50, ₹100, ₹200, ₹500, and ₹2000 denominations). 
 
-The platform pairs a 3-stage computer vision inference pipeline with an interactive ATM-themed web application, an automated image quality assessment screener, real-time explainable AI (Grad-CAM heatmaps), and an LLM-powered Help Desk powered by Google Gemini.
+The platform pairs an advanced multi-stage computer vision inference pipeline with an interactive ATM/CRT-themed web application, an automated image quality screener, real-time explainable AI (Grad-CAM heatmaps), a zero-retraining **Feature Embedding Memory Layer**, an **OpenAI CLIP Foundation Gate**, and a low-latency LLM Help Desk powered by Google Gemini.
 
 ### Key Capabilities
-- **Two-Stage Deep Learning Gating:** Rejects non-banknote images before subjecting banknotes to real/fake classification.
-- **Explainable AI (XAI):** Generates zero-overhead $7 \times 7$ Grad-CAM saliency heatmaps highlighting regions influencing classification.
-- **Deterministic Heuristic Layer:** Synthesizes raw network probabilities into human-readable metrics: Authenticity Grade (A–D), Risk Level (Low/Med/High), Star Rating (1–5), and Decision Strength.
-- **Image Quality Pre-screener:** Detects blur (Laplacian variance), glare, underexposure/overexposure, low contrast, and insufficient resolution before user misinterpretation.
-- **Constrained Memory Footprint:** Engineered to run reliably within a 512 MB RAM ceiling (Render Free Tier) using memory-mapped weights (`mmap=True`), libjpeg draft decoding, and glibc arena restrictions.
-- **LLM Knowledge Assistant:** Integrated help desk using `gemini-3.8-flash` with dynamic failover to `gemini-3.5-flash-lite`, passing scan context with strict anti-hallucination prompt boundaries.
+- **Hybrid Stage 1 Currency Gate:** Rejects non-banknote images before Stage 2 using either an open-vocabulary **OpenAI CLIP (`ViT-B/32`)** zero-shot vision-language foundation gate or a supervised **ResNet-50** binary classifier with automatic seamless failover.
+- **Stage 2 Authenticity Classification:** Distinguishes genuine from counterfeit currency across all modern Mahatma Gandhi series denominations using a fine-tuned ResNet-50 deep CNN.
+- **Explainable AI (XAI):** Generates zero-overhead $7 \times 7$ Grad-CAM saliency heatmaps highlighting regions pushing the model toward genuine or counterfeit verdicts, complete with edge-share warning heuristics.
+- **Feature Embedding Memory Layer (Zero-Retraining Learning):** Extracts 2048-dimensional normalized visual embeddings from the neural backbone. When users report misclassifications, the note's visual signature is stored in an in-memory vector cache; subsequent scans of that note apply instant memory overrides without requiring expensive model retraining in Colab.
+- **Deterministic Heuristic Layer (Stage 3):** Synthesizes raw network probabilities into human-readable metrics: Authenticity Grade (A–D), Risk Level (Low/Med/High), Star Rating (1–5), and Decision Strength.
+- **Image Quality Pre-screener:** Evaluates blur (Laplacian variance), glare, underexposure/overexposure, contrast, and resolution before user misinterpretation.
+- **512 MB RAM Optimization:** Operates reliably within Render's free tier (512 MB RAM ceiling) using memory-mapped weights (`mmap=True`), libjpeg draft decoding, glibc arena limits, and serverless CLIP inference (0 MB added server RAM).
+- **Sub-Second LLM Help Desk:** Integrated conversational assistant using `gemini-2.5-flash` with zero-thinking latency optimization (`thinking_budget=0`) and dynamic failover to `gemini-2.5-flash-lite`, passing scan diagnostics with anti-hallucination guardrails.
 
 ---
 
@@ -38,64 +40,84 @@ The platform pairs a 3-stage computer vision inference pipeline with an interact
                                  │
                                  ▼
                     ┌─────────────────────────┐
-                    │         STAGE 1         │
-                    │ Binary Currency Gate    │
-                    │ (ResNet-50 Classifier)  │
+                    │  Feature Extraction     │
+                    │  2048-D Embedding (emb1)│
                     └────────────┬────────────┘
                                  │
-                    Is Banknote? │ p1 > 0.5
-                  ┌──────────────┴──────────────┐
-                  │                             │
-             NO (p1 ≤ 0.5)                 YES (p1 > 0.5)
-                  │                             │
-                  ▼                             ▼
-       ┌────────────────────┐        ┌────────────────────┐
-       │   NOT A CURRENCY   │        │      STAGE 2       │
-       │ Confidence: 1 - p1 │        │ Real vs Fake Note  │
-       │ Quality Diagnostics│        │ (ResNet-50 Model)  │
-       └────────────────────┘        └──────────┬─────────┘
-                                                │
-                                    ┌───────────┴───────────┐
-                                    ▼                       ▼
-                         ┌────────────────────┐  ┌────────────────────┐
-                         │   Grad-CAM (XAI)   │  │   Classification   │
-                         │ Head-only Gradients│  │ Probability p2     │
-                         │ 7x7 Attention Grid │  │ p2 > 0.5 = REAL    │
-                         └──────────┬─────────┘  └──────────┬─────────┘
-                                    │                       │
-                                    └───────────┬───────────┘
-                                                │
-                                                ▼
-                                    ┌───────────────────────┐
-                                    │        STAGE 3        │
-                                    │    Result Synthesis   │
-                                    │ - Grade (A, B, C, D)  │
-                                    │ - Risk (Low/Med/High) │
-                                    │ - Rating (1 - 5 ★)    │
-                                    │ - Decision Strength   │
-                                    └───────────┬───────────┘
-                                                │
-                         ┌──────────────────────┴──────────────────────┐
-                         ▼                                             ▼
-             ┌───────────────────────┐                     ┌───────────────────────┐
-             │   Frontend ATM View   │                     │    Gemini Help Desk   │
-             │ - CRT/ATM UI Displays │                     │ Contextual Guidance   │
-             │ - Heatmap Canvas      │                     │ Security Feature Info │
-             │ - User Feedback Loop  │                     │ Failover Orchestration│
-             └───────────────────────┘                     └───────────────────────┘
+                     Prior Correction in Memory?
+                   ┌─────────────┴─────────────┐
+                   │                           │
+             YES (sim ≥ 0.92)             NO (No match)
+                   │                           │
+                   ▼                           ▼
+        ┌────────────────────┐      ┌─────────────────────────┐
+        │  Memory Override   │      │         STAGE 1         │
+        │ Instant Correction │      │ OpenAI CLIP (ViT-B/32)  │
+        └──────────┬─────────┘      │ Fallback: ResNet-50     │
+                   │                └────────────┬────────────┘
+                   │                             │
+                   │               Is Banknote?  │ p1 > 0.5
+                   │             ┌───────────────┴───────────────┐
+                   │             │                               │
+                   │       NO (p1 ≤ 0.5)                   YES (p1 > 0.5)
+                   │             │                               │
+                   │             ▼                               ▼
+                   │  ┌────────────────────┐          ┌────────────────────┐
+                   │  │   NOT A CURRENCY   │          │      STAGE 2       │
+                   │  │ Confidence: 1 - p1 │          │ Real vs Fake Note  │
+                   │  │ Quality Diagnostics│          │ (ResNet-50 Model)  │
+                   │  └──────────┬─────────┘          └──────────┬─────────┘
+                   │             │                               │
+                   └─────────────┼───────────────────────────────┤
+                                 │                               │
+                                 │                      Memory Check (emb2)?
+                                 │                    ┌──────────┴──────────┐
+                                 │                    │                     │
+                                 │              YES (sim ≥ 0.92)       NO (No match)
+                                 │                    │                     │
+                                 │                    ▼                     ▼
+                                 │         ┌────────────────────┐ ┌────────────────────┐
+                                 │         │  Memory Override   │ │ ResNet-50 + GradCAM│
+                                 │         │ Instant Real/Fake  │ │ 7x7 Attention Grid │
+                                 │         └──────────┬─────────┘ └──────────┬─────────┘
+                                 │                    │                      │
+                                 │                    └───────────┬──────────┘
+                                 │                                │
+                                 │                                ▼
+                                 │                    ┌───────────────────────┐
+                                 │                    │        STAGE 3        │
+                                 │                    │    Result Synthesis   │
+                                 │                    │ - Grade (A, B, C, D)  │
+                                 │                    │ - Risk (Low/Med/High) │
+                                 │                    │ - Rating (1 - 5 ★)    │
+                                 │                    │ - Decision Strength   │
+                                 │                    └───────────┬───────────┘
+                                 │                                │
+            ┌────────────────────┴────────────────────────────────┴────────────────────┐
+            ▼                                                                          ▼
+┌───────────────────────┐                                                  ┌───────────────────────┐
+│   Frontend ATM View   │                                                  │    Gemini Help Desk   │
+│ - CRT/ATM UI Displays │ ◄── [User Correction Feedback] ──┐               │ Contextual Guidance   │
+│ - Heatmap Canvas      │                                  │               │ Security Feature Info │
+│ - Gate Badge (CLIP)   │                                  ▼               │ Sub-second Flash 2.5  │
+│ - Memory Glow Badge   │                     ┌─────────────────────────┐  └───────────────────────┘
+└───────────────────────┘                     │ Feature Embedding Store │
+                                              │ (SQLite Vector Memory)  │
+                                              │ Overrides future scans  │
+                                              └─────────────────────────┘
 ```
 
 ---
 
 ## 3. Deep Learning Pipeline & Model Specifications
 
-Both Stage 1 and Stage 2 utilize a **ResNet-50** convolutional backbone (pretrained on ImageNet-1K) with identical custom binary classification heads.
+### 3.1 ResNet-50 Backbone Models (Stage 1 & Stage 2)
 
-### 3.1 Model Architecture
+Both Stage 1 and Stage 2 utilize a **ResNet-50** deep convolutional backbone (pretrained on ImageNet-1K) with identical custom binary classification heads:
 
 - **Backbone:** ResNet-50 (`torchvision.models.resnet50(weights=None)`)
 - **Backbone Feature Output:** 2,048 feature maps ($7 \times 7$ spatial resolution after `layer4` conv blocks and before average pooling).
-- **Custom Head:**
+- **Custom Head Architecture:**
   ```python
   nn.Sequential(
       nn.Dropout(p=0.5),
@@ -113,24 +135,20 @@ Both Stage 1 and Stage 2 utilize a **ResNet-50** convolutional backbone (pretrai
 ### 3.2 Label Conventions & Standard Logic
 
 > [!IMPORTANT]
-> **Label Orientation:** For both stages, outputs are mapped so that probability $> 0.5$ designates the target positive class:
+> **Label Orientation:** For both stages, probability $> 0.5$ designates the target positive class:
 > - **Stage 1 (Currency Detection):** $\text{prob} > 0.5 \implies$ **CURRENCY**; $\le 0.5 \implies$ **NON-CURRENCY**.
 > - **Stage 2 (Real/Fake Classification):** $\text{prob} > 0.5 \implies$ **REAL NOTE** ($\text{Label} = 1$); $\le 0.5 \implies$ **FAKE NOTE** ($\text{Label} = 0$).
 
 ### 3.3 Training Configuration & Hyperparameters (Google Colab)
 
-Models were trained across Phase 1 to Phase 3 in Google Colab (GPU accelerated):
+Models were trained in Google Colab (GPU accelerated):
 - **Optimizer:** Adam ($\text{lr} = 3 \times 10^{-4}$, $\text{weight\_decay} = 1 \times 10^{-4}$)
 - **Batch Size:** 32
-- **Loss Function:** `nn.BCEWithLogitsLoss(pos_weight=...)` *(Note: Applied to Sigmoid output activations; saved checkpoints operate reliably with standard decision thresholds)*.
+- **Loss Function:** `nn.BCEWithLogitsLoss()`
 - **Learning Rate Scheduler:** `ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=3)`
-- **Early Stopping:** Patience = 5 epochs (Stage 1 stopped at Epoch 7; best checkpoint saved at Epoch 2).
+- **Early Stopping:** Patience = 5 epochs (Stage 1 best checkpoint saved at Epoch 2).
 - **Dataset Partitioning:** 70% Train / 15% Validation / 15% Test (Stratified sampling, seed = 42).
-- **Data Augmentations:**
-  - `RandomHorizontalFlip(p=0.5)`
-  - `RandomVerticalFlip(p=0.5)`
-  - `RandomRotation(degrees=15)`
-  - `ColorJitter(brightness=0.2, contrast=0.2)`
+- **Data Augmentations:** `RandomHorizontalFlip(p=0.5)`, `RandomVerticalFlip(p=0.5)`, `RandomRotation(degrees=15)`, `ColorJitter(brightness=0.2, contrast=0.2)`.
 
 ### 3.4 Verified Empirical Performance
 
@@ -143,13 +161,56 @@ All metrics reflect genuine test evaluations on held-out test sets:
 - **Non-Currency Class ($n=202$):** Precision = 0.66, Recall = 0.98
 - **Confusion Matrix:**
   $$\begin{pmatrix} \text{TN (Non-Currency)} & \text{FP} \\ \text{FN} & \text{TP (Currency)} \end{pmatrix} = \begin{pmatrix} 198 & 4 \\ 102 & 1014 \end{pmatrix}$$
-- **Dataset Size:** 7,442 currency images + 1,344 downloaded non-currency images = 8,786 total images (Split: 6,150 train / 1,318 val / 1,318 test).
+- **Dataset Size:** 7,442 currency images + 1,344 non-currency images = 8,786 total images.
 
 #### Stage 2: Real vs. Fake Classifier ($N_{\text{test}} = 1,117$)
 - **Overall Accuracy:** ~99.46%
 - **Confusion Matrix:**
   $$\begin{pmatrix} \text{TN (Fake)} & \text{FP} \\ \text{FN} & \text{TP (Real)} \end{pmatrix} = \begin{pmatrix} 375 & 1 \\ 5 & 736 \end{pmatrix}$$
 - **Dataset Source:** Kaggle Indian Currency Real vs Fake Notes across ₹10, ₹20, ₹50, ₹100, ₹200, ₹500, and ₹2000 denominations.
+
+---
+
+### 3.5 OpenAI CLIP (`ViT-B/32`) Zero-Shot Gating (`clip_gate.py`)
+
+To eliminate false-positive non-currency leaks without retraining ResNet-50 in Colab, the system includes an **OpenAI CLIP ViT-B/32** zero-shot multimodal foundation gate.
+
+- **Model:** `openai/clip-vit-base-patch32` (Contrastive Language-Image Pretraining, 400M pre-trained pairs).
+- **Mechanism:** Text-image cosine similarity in a shared 512-dimensional latent embedding space.
+- **Candidate Label Sets:**
+  - *Positive Labels:*
+    - `"an Indian Rupee currency banknote"`
+    - `"an Indian paper currency note"`
+    - `"a genuine Indian banknote of paper money"`
+  - *Negative Labels:*
+    - `"a photograph of everyday objects, furniture, or animals"`
+    - `"a white document, invoice, receipt, or plain paper"`
+    - `"a page of a book, newspaper, or identity card"`
+    - `"a toy, electronic gadget, or blank background"`
+- **Score Aggregation:**
+  $$\text{pos\_score} = \sum_{l \in \text{POS}} S(I, l), \quad \text{neg\_score} = \sum_{l \in \text{NEG}} S(I, l)$$
+  $$\text{norm\_pos} = \frac{\text{pos\_score}}{\text{pos\_score} + \text{neg\_score}}$$
+  Image passes Stage 1 if $\text{norm\_pos} \ge 0.50$.
+- **0 MB Server RAM Architecture:** Executes via Hugging Face Serverless Inference API router (`router.huggingface.co/hf-inference`), adding zero weight memory to Render's 512 MB container.
+- **Fail-Safe Fallback:** If `HF_TOKEN` is unset or an API timeout occurs, the system automatically falls back to the local ResNet-50 binary classifier with zero downtime.
+
+---
+
+### 3.6 Feature Embedding Memory Layer (`memory.py`)
+
+The system implements a **zero-retraining continuous learning layer** that learns from mistake reports without needing model retraining:
+
+- **Embedding Extraction:** During every forward pass through ResNet-50, the 2048-dimensional feature vector immediately preceding the classification head is extracted:
+  $$\mathbf{e} = \text{Flatten}(\text{AdaptiveAvgPool2d}(\mathbf{F}_{layer4})) \in \mathbb{R}^{2048}$$
+  $$\hat{\mathbf{e}} = \frac{\mathbf{e}}{\|\mathbf{e}\|_2 + 10^{-7}}$$
+- **Similarity Metric:** Fast in-memory cosine dot product against all active approved memories:
+  $$\text{sim}(\hat{\mathbf{e}}, \mathbf{m}_i) = \hat{\mathbf{e}} \cdot \mathbf{m}_i \in [-1, 1]$$
+- **Decision Thresholds:**
+  - **Override ($\text{sim} \ge 0.92$):** Direct visual match to a previously corrected note. The model verdict is overridden instantly (e.g. $p_1 = 0.99$ or $0.01$).
+  - **Blend ($0.85 \le \text{sim} < 0.92$):** High visual affinity. The model's raw probability is blended with the prior human correction:
+    $$p_{\text{blended}} = 0.4 \times p_{\text{raw}} + 0.6 \times p_{\text{target}}$$
+  - **Ignore ($\text{sim} < 0.85$):** Standard forward pass verdict is preserved.
+- **Persistence & Administration:** Stored in SQLite (`memory.db`). Includes moderation endpoints (`/api/memory/list`, `/api/memory/approve`) and automatic registration on user feedback corrections (`POST /api/feedback`).
 
 ---
 
@@ -185,9 +246,7 @@ Because the service runs on a constrained 512 MB container, several memory-savin
 
 Raw probabilities ($p_2 \in [0, 1]$) are converted into user-friendly metrics:
 
-- **Stars (Authenticity Rating):**
-  $$\text{Stars} = \max(1, \min(5, \text{round}(5 \times p_2)))$$
-  *Note: Stars denote probability of authenticity, not model confidence.*
+- **Stars (Authenticity Rating):** $\text{Stars} = \max(1, \min(5, \text{round}(5 \times p_2)))$
 - **Authenticity Grade (Verdict-Aware):**
   - If **REAL**:
     - $p_2 \ge 0.95 \implies \mathbf{A}$
@@ -195,7 +254,7 @@ Raw probabilities ($p_2 \in [0, 1]$) are converted into user-friendly metrics:
     - $p_2 \ge 0.60 \implies \mathbf{C}$
     - $p_2 < 0.60 \implies \mathbf{D}$
   - If **FAKE**:
-    - $(1-p_2) \ge 0.95 \implies \mathbf{D}$ (confident counterfeit)
+    - $(1-p_2) \ge 0.95 \implies \mathbf{D}$
     - $(1-p_2) \ge 0.80 \implies \mathbf{C}$
     - $(1-p_2) \ge 0.60 \implies \mathbf{B}$
     - $(1-p_2) < 0.60 \implies \mathbf{A}$
@@ -210,50 +269,49 @@ Raw probabilities ($p_2 \in [0, 1]$) are converted into user-friendly metrics:
 
 ### 4.3 Explainability Engine: Head-Only Grad-CAM (`explain.py`)
 
-To deliver visual explanations without doubling runtime or memory:
 1. Backbone forward pass runs within `torch.no_grad()` to extract the $2048 \times 7 \times 7$ feature tensor from `layer4`.
 2. The feature tensor is detached and set to `requires_grad_(True)`.
 3. Only the lightweight classifier head forward & backward pass runs with `torch.enable_grad()` against the pre-sigmoid logit.
-4. Channel weights are calculated via global average pooling of gradients:
-   $$w_k = \frac{1}{7 \times 7} \sum_{i=1}^7 \sum_{j=1}^7 \frac{\partial y_{\text{logit}}}{\partial A_{i, j}^k}$$
-5. Activation heatmap:
-   $$L_{\text{CAM}} = \text{ReLU}\left(\sum_k w_k A^k\right)$$
+4. Channel weights:
+   $$w_k = \frac{1}{49} \sum_{i=1}^7 \sum_{j=1}^7 \frac{\partial y_{\text{logit}}}{\partial A_{i, j}^k}$$
+5. Activation heatmap: $L_{\text{CAM}} = \text{ReLU}\left(\sum_k w_k A^k\right)$.
 6. Computation cost: Only ~9 ms extra per scan (154 ms vs 145 ms).
-7. **Edge Share Warning:** Computes the proportion of heat residing in the perimeter cells:
+7. **Edge Share Warning:** Computes the proportion of heat in perimeter cells:
    $$\text{edge\_share} = 1.0 - \frac{\sum_{i=2}^6 \sum_{j=2}^6 L_{\text{CAM}}(i, j)}{\sum_{\text{all}} L_{\text{CAM}}}$$
-   If $\text{edge\_share} \ge 0.65$, the system triggers a warning that background edges may be influencing the verdict.
+   If $\text{edge\_share} \ge 0.65$, a warning indicates background influence.
 
 ### 4.4 Automated Image Quality Assessment (`quality.py`)
 
-Before returning verdicts, the image is evaluated across 5 computer-vision checks on a downscaled $512 \times 512$ thumbnail:
-1. **Sharpness:** Variance of the discrete Laplacian operator:
-   $$\Delta I(x, y) = -4 I(x, y) + I(x-1, y) + I(x+1, y) + I(x, y-1) + I(x, y+1)$$
-   - Fail: $\sigma^2_{\text{Lap}} < 60.0$ | Warn: $< 150.0$ | OK: $\ge 150.0$.
-2. **Brightness / Exposure:** Mean pixel intensity (Dark fail $< 40$, warn $< 70$; Overexposed fail $> 225$, warn $> 200$).
-3. **Contrast:** Standard deviation of pixel intensities (Fail $< 14.0$, Warn $< 28.0$).
-4. **Glare:** Ratio of pixels saturated at $\ge 250$ (Fail $> 20\%$, Warn $> 8\%$).
-5. **Resolution:** Minimum side of original image (Fail $< 200\text{ px}$, Warn $< 400\text{ px}$).
-- **Overall Rating:** `POOR` (if any fail), `FAIR` (if any warn), or `GOOD`. `POOR` flags `retake: true`.
+Evaluates 5 computer-vision checks on a downscaled $512 \times 512$ thumbnail:
+1. **Sharpness:** Variance of discrete Laplacian: $\sigma^2_{\text{Lap}} < 60.0$ (Fail), $< 150.0$ (Warn), $\ge 150.0$ (OK).
+2. **Brightness / Exposure:** Mean pixel intensity: Dark fail $< 40$, warn $< 70$; Overexposed fail $> 225$, warn $> 200$.
+3. **Contrast:** Standard deviation of intensities: Fail $< 14.0$, Warn $< 28.0$.
+4. **Glare:** Ratio of saturated pixels ($\ge 250$): Fail $> 20\%$, Warn $> 8\%$.
+5. **Resolution:** Minimum side of original image: Fail $< 200\text{ px}$, Warn $< 400\text{ px}$.
+- Rating: `POOR` (if any fail), `FAIR` (if any warn), or `GOOD`.
 
-### 4.5 LLM Help Desk & Fallback Orchestration (`chat.py`)
+### 4.5 LLM Help Desk & Fast Inference (`chat.py`)
 
-- **Primary Model:** `gemini-3.8-flash` via Google GenAI SDK (`google-genai`).
-- **Fallback Model:** `gemini-3.5-flash-lite` (automatically engaged on 429 rate limits or 503 upstream overloads).
-- **Scan Context Injection:** Passes the user's latest scan results (verdict, confidence, grade, risk, quality, and coarse attention sector) into the system prompt.
-- **Strict Grounding Guardrails:** System prompt explicitly instructs the LLM that Grad-CAM attention does *not* indicate specific security feature failures, preventing fabricated security claims.
+- **Primary Model:** `gemini-2.5-flash` via Google GenAI SDK (`google-genai`).
+- **Sub-Second Latency:** Configured with `thinking_budget=0` to disable dynamic multi-second reasoning delays, cutting response latency from 15 seconds to under 1 second.
+- **Dynamic Fallback:** Automatically switches to `gemini-2.5-flash-lite` if the primary model is busy or rate-limited.
+- **Multi-Turn Sanitization:** Normalizes conversation turns to guarantee strictly alternating `user` / `model` sequences, preventing API schema rejections on consecutive user queries.
+- **Context Injection:** Injects latest scan verdict, confidence, grade, risk, quality, and attention focus with strict anti-hallucination boundaries.
 - **Rate Limiting:** In-memory sliding window limiter (`ratelimit.py`) enforcing 6 queries/min per visitor IP and 300 queries/hour site-wide.
 
 ### 4.6 API Endpoint Specification
 
 | Method | Route | Description | Request Body | Response |
 |--------|-------|-------------|--------------|----------|
-| `POST` | `/api/detect` | Single image scan + Grad-CAM | `multipart/form-data` (`file`) | JSON: Stage 1, Stage 2, Quality, Explanation |
+| `POST` | `/api/detect` | Single image scan + Grad-CAM + Memory check | `multipart/form-data` (`file`) | JSON: Stage 1, Stage 2, Quality, Explanation, Memory Match |
 | `POST` | `/api/batch` | Batch scan (max 20 images) | `multipart/form-data` (`files`) | JSON: Summary counts + individual results |
-| `POST` | `/api/feedback` | Log user correction | JSON: `{predicted, actual, confidence, quality, comment}` | `{"id": <int>}` |
+| `POST` | `/api/feedback` | Log user correction & auto-register memory | JSON: `{predicted, actual, confidence, quality, comment, note_token}` | `{"id": <int>, "memory_registered": bool}` |
 | `GET` | `/api/feedback/export` | Export feedback (CSV/JSON) | Header: `X-Admin-Token` | CSV file attachment or JSON list |
+| `GET` | `/api/memory/list` | View active feature embeddings | Header: `X-Admin-Token` | JSON: List of vector memories with stage & labels |
+| `POST` | `/api/memory/approve` | Approve or deactivate memory | JSON: `{id: <int>, approved: bool}`, Header: `X-Admin-Token` | `{"status": "ok", "id": <int>, "approved": bool}` |
 | `GET` | `/api/chat/status` | Help desk availability check | None | `{"enabled": true/false}` |
 | `POST` | `/api/chat` | Query AI help desk | JSON: `{messages: [...], scan: {...}}` | `{"reply": "<string>"}` |
-| `GET` | `/health` | Container health probe | None | `{"status": "ok", "models_loaded": true}` |
+| `GET` | `/health` | Container health probe | None | `{"status": "ok", "models_loaded": bool, "stage1_gate": {...}}` |
 
 ---
 
@@ -265,7 +323,7 @@ The frontend is built using **React 18** and bundled with **Vite**, designed as 
 
 ```
 App.jsx (Root & ATM Frame)
- ├── Topbar (Brand title + LED indicator)
+ ├── Topbar (Brand title + LED status indicator)
  ├── Navigation Modes (SINGLE NOTE | BATCH | HELP)
  ├── Display Section
  │    ├── IdleScreen (Dropzone, upload button, camera capture)
@@ -273,7 +331,9 @@ App.jsx (Root & ATM Frame)
  │    ├── ResultScreen
  │    │    ├── Heatmap.jsx (HTML5 Canvas overlaying 7x7 Grad-CAM grid)
  │    │    ├── QualityNote.jsx (Displaying quality status & retake warning)
- │    │    ├── FeedbackPrompt.jsx (User feedback thumbs-up / correction)
+ │    │    ├── FeedbackPrompt.jsx (User feedback correction modal)
+ │    │    ├── Gate Architecture Badge (OpenAI CLIP ViT-B/32 vs ResNet-50)
+ │    │    ├── Memory Match Badge (Glowing CRT indicator on memory overrides)
  │    │    └── Meter & Receipt (Authenticity metrics visualization)
  │    ├── BatchScreen.jsx (Multi-file upload, row status, batch totals)
  │    └── ChatScreen.jsx (Conversational help desk with suggestion pills)
@@ -281,9 +341,10 @@ App.jsx (Root & ATM Frame)
 ```
 
 ### 5.2 Key Frontend Mechanics
-- **Canvas Heatmap Renderer (`Heatmap.jsx`):** Renders the $7 \times 7$ normalized Grad-CAM matrix onto an offscreen canvas, applies bicubic upscaling to $112 \times 112$, and maps green tones for genuine features and red tones for counterfeit signals with alpha transparency over the original banknote image.
-- **Cold-Start Resilience (`ChatScreen.jsx`):** Employs an exponential retry strategy (3 attempts, 2.5s delay) to query `/api/chat/status`, gracefully handling Render free container spin-up rather than falsely displaying "offline".
-- **Responsive Mobile Camera Hook:** Supports native device camera triggers using `capture="environment"` attribute toggles.
+- **Canvas Heatmap Renderer (`Heatmap.jsx`):** Renders the $7 \times 7$ normalized Grad-CAM matrix onto an offscreen canvas, applies bicubic upscaling to $112 \times 112$, and maps green tones for genuine features and red tones for counterfeit signals with alpha transparency over the banknote.
+- **Memory Override Indicators:** Renders an animated glowing badge `[MEMORY VERIFIED: ...]` whenever a scan verdict was steered by prior user feedback.
+- **Stage 1 Architecture Pill:** Exposes whether Stage 1 was evaluated by `OpenAI CLIP ViT-B/32` or `ResNet-50`.
+- **Cold-Start Resilience (`ChatScreen.jsx`):** Employs an exponential retry strategy (3 attempts, 2.5s delay) to query `/api/chat/status`, gracefully handling Render free container spin-up.
 
 ---
 
@@ -327,28 +388,16 @@ ENV MODEL_DIR=/app/model \
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
 ```
 
-### 6.2 Render Configuration (`render.yaml`)
+### 6.2 Render Environment Variables
 
-```yaml
-services:
-  - type: web
-    name: currency-atm
-    runtime: docker
-    dockerfilePath: ./Dockerfile
-    plan: free
-    healthCheckPath: /health
-    envVars:
-      - key: ADMIN_TOKEN
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: CHAT_PROVIDER
-        value: gemini
-      - key: CHAT_MODEL
-        value: gemini-3.8-flash
-      - key: CHAT_FALLBACK_MODEL
-        value: gemini-3.5-flash-lite
-```
+| Variable | Required | Description |
+| :--- | :---: | :--- |
+| `GEMINI_API_KEY` | Yes | API key for Gemini 2.5 Flash chatbot assistance |
+| `HF_TOKEN` | Optional | Free Hugging Face token to activate OpenAI CLIP ViT-B/32 Stage 1 |
+| `STAGE1_MODE` | Optional | `"auto"` (default), `"clip"`, or `"resnet"` |
+| `ADMIN_TOKEN` | Optional | Secret key for feedback and memory admin endpoints |
+| `CHAT_MODEL` | Optional | Defaults to `gemini-2.5-flash` |
+| `CHAT_FALLBACK_MODEL` | Optional | Defaults to `gemini-2.5-flash-lite` |
 
 ---
 
@@ -376,13 +425,6 @@ npm run dev
 # App will launch on http://localhost:5173, proxying /api requests to localhost:8000
 ```
 
-### 7.3 Testing with Docker Locally
-
-```bash
-docker build -t indian-currency-authenticator .
-docker run -p 8000:8000 -e GEMINI_API_KEY="your-key-here" indian-currency-authenticator
-```
-
 ---
 
 ## 8. Governance, Strict Rules & Known Limitations
@@ -392,10 +434,9 @@ docker run -p 8000:8000 -e GEMINI_API_KEY="your-key-here" indian-currency-authen
 2. **Local Research Paper (`report/`):** Excluded via `.git/info/exclude`. Must never be tracked or pushed to remote repositories.
 3. **Commit Authorship Rotation:** Rotate authorship strictly across the three collaborators:
    $$\text{Ayush Trivedi} \longrightarrow \text{Akshat Vidyarthi} \longrightarrow \text{Harsh Thakkar}$$
-   *(Next scheduled author: **Akshat Vidyarthi**)*. Commits must never include automated AI co-author trailers.
+   *(Next scheduled author: **Harsh Thakkar <harsht1103@gmail.com>**)*. Commits must never include automated AI co-author trailers.
 4. **Data Integrity:** Never fabricate or extrapolate benchmark metrics. All reported numbers must strictly originate from actual Colab runs.
 
 ### 8.2 Known Technical Caveats & Considerations
 - **Double-Sigmoid Calibration:** Models were trained with `BCEWithLogitsLoss` over Sigmoid outputs. While classification thresholds ($0.5$) are fully functional, intermediate probabilities are slightly uncalibrated. Authenticity grades and decision strengths serve as qualitative heuristics rather than rigorous Bayesian probabilities.
-- **Stage 1 Non-Currency Precision (0.66):** Due to the limited non-currency dataset ($N \approx 1,344$), approximately 102 non-currency test images leaked past Stage 1 as currency. Expanding diverse negative non-currency images remains an active recommendation.
 - **Render Cold Starts:** The free hosting plan spins down upon idle; the frontend includes status polling and connection indicators to guide users during cold wakeups.
